@@ -18,7 +18,6 @@ import {
 interface SyncSettings {
   github_token: string;
   github_username: string;
-  sync_repository: string;
 }
 
 function loadSyncSettings(): SyncSettings | null {
@@ -26,11 +25,10 @@ function loadSyncSettings(): SyncSettings | null {
   if (!fs.existsSync(settingsPath)) return null;
   try {
     const s = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-    if (!s.github_token || !s.github_username || !s.sync_repository) return null;
+    if (!s.github_token || !s.github_username) return null;
     return {
       github_token: s.github_token,
       github_username: s.github_username,
-      sync_repository: s.sync_repository,
     };
   } catch {
     return null;
@@ -50,23 +48,21 @@ function run(cmd: string, cwd: string, env?: Record<string, string>): string {
 /**
  * Ensure the sync repository exists (create as private if missing).
  */
-function ensureRepo(settings: SyncSettings): void {
-  const [owner, repo] = settings.sync_repository.split('/');
+function ensureRepo(token: string, repoFullName: string): void {
+  const [owner, repo] = repoFullName.split('/');
   try {
-    // Check if repo exists
     run(
       `gh api repos/${owner}/${repo} --jq .private`,
       process.cwd(),
-      { GH_TOKEN: settings.github_token },
+      { GH_TOKEN: token },
     );
-    logger.debug({ repo: settings.sync_repository }, 'Sync repo exists');
+    logger.debug({ repo: repoFullName }, 'Sync repo exists');
   } catch {
-    // Create private repo
-    logger.info({ repo: settings.sync_repository }, 'Creating private sync repo');
+    logger.info({ repo: repoFullName }, 'Creating private sync repo');
     run(
-      `gh repo create ${settings.sync_repository} --private --description "SciClaw experiment results" --confirm`,
+      `gh repo create ${repoFullName} --private --description "CoreClaw experiment results" --confirm`,
       process.cwd(),
-      { GH_TOKEN: settings.github_token },
+      { GH_TOKEN: token },
     );
   }
 }
@@ -137,37 +133,48 @@ export async function syncExperiment(experimentId: string): Promise<{ ok: boolea
     return { ok: false, message: 'Experiment not found.' };
   }
 
-  // Use per-experiment sync_repo if set, otherwise fall back to global setting
-  const syncRepo = exp.sync_repo || settings.sync_repository;
+  const syncRepo = exp.sync_repo;
   if (!syncRepo) {
-    return { ok: false, message: 'No sync repository configured. Set it in experiment settings or global Settings.' };
+    return { ok: false, message: 'No sync repository configured. Set it in Chat settings.' };
   }
-  const effectiveSettings = { ...settings, sync_repository: syncRepo };
 
   const syncDir = path.join(DATA_DIR, 'sync-workspace');
   const repoDir = path.join(syncDir, syncRepo.replace('/', '-'));
 
   try {
-    ensureRepo(effectiveSettings);
+    ensureRepo(settings.github_token, syncRepo);
 
     const gitEnv = {
       GH_TOKEN: settings.github_token,
-      GIT_AUTHOR_NAME: 'SciClaw',
-      GIT_AUTHOR_EMAIL: 'sciclaw@local',
-      GIT_COMMITTER_NAME: 'SciClaw',
-      GIT_COMMITTER_EMAIL: 'sciclaw@local',
+      GIT_AUTHOR_NAME: 'CoreClaw',
+      GIT_AUTHOR_EMAIL: 'coreclaw@local',
+      GIT_COMMITTER_NAME: 'CoreClaw',
+      GIT_COMMITTER_EMAIL: 'coreclaw@local',
     };
 
     // Clone or pull
     if (!fs.existsSync(path.join(repoDir, '.git'))) {
       fs.mkdirSync(syncDir, { recursive: true });
-      const cloneUrl = `https://x-access-token:${settings.github_token}@github.com/${settings.sync_repository}.git`;
+      const cloneUrl = `https://x-access-token:${settings.github_token}@github.com/${syncRepo}.git`;
       run(`git clone ${cloneUrl} ${repoDir}`, syncDir, gitEnv);
     } else {
       try {
         run('git pull --rebase origin main', repoDir, gitEnv);
-      } catch {
-        // May fail if repo is empty — that's fine
+      } catch (pullErr) {
+        // Abort rebase if conflict occurred, then reset to clean state
+        try { run('git rebase --abort', repoDir, gitEnv); } catch { /* ignore */ }
+        // Check if failure is due to empty repo (no commits) — that's fine
+        try {
+          run('git rev-parse HEAD', repoDir, gitEnv);
+          // HEAD exists but rebase failed → conflict; delete and re-clone
+          logger.warn({ repo: syncRepo }, 'Rebase conflict on push — re-cloning');
+          fs.rmSync(repoDir, { recursive: true, force: true });
+          fs.mkdirSync(syncDir, { recursive: true });
+          const cloneUrl = `https://x-access-token:${settings.github_token}@github.com/${syncRepo}.git`;
+          run(`git clone ${cloneUrl} ${repoDir}`, syncDir, gitEnv);
+        } catch {
+          // Empty repo — no HEAD, that's fine
+        }
       }
     }
 
@@ -192,8 +199,8 @@ export async function syncExperiment(experimentId: string): Promise<{ ok: boolea
       run('git push -u origin HEAD:main', repoDir, gitEnv);
     }
 
-    logger.info({ experimentId, repo: settings.sync_repository }, 'Experiment synced to GitHub');
-    return { ok: true, message: `Synced to github.com/${settings.sync_repository}` };
+    logger.info({ experimentId, repo: syncRepo }, 'Experiment synced to GitHub');
+    return { ok: true, message: `Synced to github.com/${syncRepo}` };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ experimentId, err }, 'GitHub sync failed');
@@ -215,24 +222,23 @@ export async function pullExperiment(experimentId: string): Promise<{ ok: boolea
     return { ok: false, message: 'Experiment not found.', imported: 0 };
   }
 
-  const syncRepo = exp.sync_repo || settings.sync_repository;
+  const syncRepo = exp.sync_repo;
   if (!syncRepo) {
-    return { ok: false, message: 'No sync repository configured.', imported: 0 };
+    return { ok: false, message: 'No sync repository configured. Set it in Chat settings.', imported: 0 };
   }
-  const effectiveSettings = { ...settings, sync_repository: syncRepo };
 
   const syncDir = path.join(DATA_DIR, 'sync-workspace');
   const repoDir = path.join(syncDir, syncRepo.replace('/', '-'));
 
   try {
-    ensureRepo(effectiveSettings);
+    ensureRepo(settings.github_token, syncRepo);
 
     const gitEnv = {
       GH_TOKEN: settings.github_token,
-      GIT_AUTHOR_NAME: 'SciClaw',
-      GIT_AUTHOR_EMAIL: 'sciclaw@local',
-      GIT_COMMITTER_NAME: 'SciClaw',
-      GIT_COMMITTER_EMAIL: 'sciclaw@local',
+      GIT_AUTHOR_NAME: 'CoreClaw',
+      GIT_AUTHOR_EMAIL: 'coreclaw@local',
+      GIT_COMMITTER_NAME: 'CoreClaw',
+      GIT_COMMITTER_EMAIL: 'coreclaw@local',
     };
 
     if (!fs.existsSync(path.join(repoDir, '.git'))) {
@@ -240,7 +246,17 @@ export async function pullExperiment(experimentId: string): Promise<{ ok: boolea
       const cloneUrl = `https://x-access-token:${settings.github_token}@github.com/${syncRepo}.git`;
       run(`git clone ${cloneUrl} ${repoDir}`, syncDir, gitEnv);
     } else {
-      run('git pull --rebase origin main', repoDir, gitEnv);
+      try {
+        run('git pull --rebase origin main', repoDir, gitEnv);
+      } catch {
+        // Abort rebase if conflict occurred, then re-clone for clean state
+        try { run('git rebase --abort', repoDir, gitEnv); } catch { /* ignore */ }
+        logger.warn({ repo: syncRepo }, 'Rebase conflict on pull — re-cloning');
+        fs.rmSync(repoDir, { recursive: true, force: true });
+        fs.mkdirSync(syncDir, { recursive: true });
+        const cloneUrl = `https://x-access-token:${settings.github_token}@github.com/${syncRepo}.git`;
+        run(`git clone ${cloneUrl} ${repoDir}`, syncDir, gitEnv);
+      }
     }
 
     // Find experiment directory in repo
@@ -287,8 +303,8 @@ export async function pullExperiment(experimentId: string): Promise<{ ok: boolea
       }
     }
 
-    logger.info({ experimentId, repo: settings.sync_repository, imported }, 'Experiment pulled from GitHub');
-    return { ok: true, message: `Pulled ${imported} files from github.com/${settings.sync_repository}`, imported };
+    logger.info({ experimentId, repo: syncRepo, imported }, 'Experiment pulled from GitHub');
+    return { ok: true, message: `Pulled ${imported} files from github.com/${syncRepo}`, imported };
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     logger.error({ experimentId, err }, 'GitHub pull failed');

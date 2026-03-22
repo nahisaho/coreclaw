@@ -360,6 +360,13 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .skill-scan-badge.red { background: #ef4444; box-shadow: 0 0 4px rgba(239,68,68,.4); }
 .skill-scan-badge.scanning { background: var(--text-muted); animation: scan-pulse 1s ease-in-out infinite; }
 @keyframes scan-pulse { 0%,100% { opacity: .4; } 50% { opacity: 1; } }
+.skill-scan-info {
+  background: none; border: 1px solid var(--border); color: var(--text-muted);
+  font-size: 10px; padding: 1px 5px; border-radius: 4px; cursor: pointer;
+  margin-left: 4px; flex-shrink: 0; transition: all .15s; font-family: var(--font-mono);
+  line-height: 1.4;
+}
+.skill-scan-info:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-subtle, rgba(99,102,241,.08)); }
 
 /* Scan result modal */
 .modal.scan-modal { min-width: 520px; max-width: 640px; max-height: 75vh; display: flex; flex-direction: column; }
@@ -388,6 +395,12 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   background: var(--bg-primary); padding: 4px 8px; border-radius: 4px; margin-top: 4px;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
+.scan-finding.whitelisted { opacity: .45; }
+.scan-finding-wl {
+  display: flex; align-items: center; gap: 4px; flex-shrink: 0; margin-left: 8px;
+}
+.scan-finding-wl input[type="checkbox"] { margin: 0; cursor: pointer; }
+.scan-finding-wl label { font-size: 11px; color: var(--text-muted); cursor: pointer; white-space: nowrap; }
 
 /* Sidebar skill badge */
 .sidebar-skill-badge {
@@ -501,9 +514,20 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   cursor: pointer; font-size: 11px; white-space: nowrap; transition: all .15s;
 }
 .btn-update:hover { background: var(--accent); color: #fff; }
-.btn-update:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-update:disabled { opacity: 0.4; cursor: not-allowed; background: var(--bg-secondary); border-color: var(--border); color: var(--text-muted); }
+.btn-update:disabled:hover { background: var(--bg-secondary); color: var(--text-muted); }
 .btn-update.success { border-color: var(--green); color: var(--green); }
 .btn-update.error { border-color: var(--red); color: var(--red); }
+.btn-check {
+  background: var(--bg-primary); border: 1px solid var(--text-muted);
+  color: var(--text-secondary); padding: 4px 12px; border-radius: 5px;
+  cursor: pointer; font-size: 11px; white-space: nowrap; transition: all .15s;
+  margin-right: 6px;
+}
+.btn-check:hover { background: var(--bg-secondary); color: var(--text-primary); }
+.btn-check:disabled { opacity: 0.5; cursor: not-allowed; }
+.btn-check.has-update { border-color: #f0a020; color: #f0a020; }
+.btn-check.up-to-date { border-color: var(--green); color: var(--green); }
 
 /* ===== Main (Right Pane) ===== */
 .main {
@@ -1116,11 +1140,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
             <label><span class="field-icon">👤</span> GitHub Username</label>
             <input type="text" id="settingsGithubUser" placeholder="your-username">
           </div>
-          <div class="settings-field">
-            <label><span class="field-icon">📦</span> Sync Repository</label>
-            <input type="text" id="settingsGithubRepo" placeholder="owner/repo-name">
-            <div class="field-hint">Repository to sync experiment results (e.g. nahisaho/my-experiments)</div>
-          </div>
+
         </div>
       </div>
 
@@ -2203,7 +2223,10 @@ async function loadSkillList() {
     list.innerHTML = cachedSkills.map(s => {
       const scanClass = skillScanResults[s.name] || '';
       const scanTitle = scanClass === 'green' ? 'Safe' : scanClass === 'yellow' ? 'Warnings found' : scanClass === 'red' ? 'Risks found' : 'Not scanned';
-      const badgeHtml = scanClass ? '<span class="skill-scan-badge ' + scanClass + '" title="' + scanTitle + '" onclick="showScanDetail(\'' + esc(s.name) + '\')" data-skill="' + esc(s.name) + '"></span>' : '';
+      const badgeHtml = scanClass
+        ? '<span class="skill-scan-badge ' + scanClass + '" title="' + scanTitle + '" data-skill="' + esc(s.name) + '"></span>'
+          + '<button class="skill-scan-info" onclick="showScanDetail(\'' + esc(s.name) + '\')" title="Scan details">info</button>'
+        : '';
       return `
       <div class="skill-card" id="skill-card-${esc(s.name)}">
         <div class="skill-card-info">
@@ -2314,12 +2337,20 @@ async function scanSkill(name) {
     const data = await res.json();
     skillScanResults[name] = data.status;
     skillScanDetails[name] = data;
-    // Update badge
+    // Update badge and add info button
     const b2 = document.querySelector(`[data-skill="${name}"]`);
     if (b2) {
       b2.className = 'skill-scan-badge ' + data.status;
       b2.title = data.status === 'green' ? 'Safe' : data.status === 'yellow' ? 'Warnings found' : 'Risks found';
-      b2.onclick = () => showScanDetail(name);
+      // Add info button if not present
+      if (!b2.nextElementSibling || !b2.nextElementSibling.classList.contains('skill-scan-info')) {
+        const infoBtn = document.createElement('button');
+        infoBtn.className = 'skill-scan-info';
+        infoBtn.textContent = 'info';
+        infoBtn.title = 'Scan details';
+        infoBtn.onclick = () => showScanDetail(name);
+        b2.after(infoBtn);
+      }
     }
     return data;
   } catch (e) {
@@ -2347,6 +2378,36 @@ function showScanDetail(name) {
   if (!data) return;
   const statusLabel = data.status === 'green' ? '✅ Safe' : data.status === 'yellow' ? '⚠️ Warnings' : '🔴 Risks Detected';
   const statusColor = data.status === 'green' ? '#22c55e' : data.status === 'yellow' ? '#eab308' : '#ef4444';
+
+  // Build reason summary
+  let reasonHtml = '';
+  if (data.status === 'green') {
+    const hasWhitelisted = data.whitelistedCount > 0;
+    reasonHtml = '<div style="background:rgba(34,197,94,.08);border:1px solid rgba(34,197,94,.25);border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--text-primary)">'
+      + '<strong>判定理由:</strong> すべてのファイルをスキャンし、危険なパターンは検出されませんでした。このスキルは安全です。'
+      + (hasWhitelisted ? '<br><span style="color:var(--text-muted)">（' + data.whitelistedCount + ' 件は確認済みとしてスキップ）</span>' : '')
+      + '</div>';
+  } else {
+    const labels = {};
+    for (const f of data.findings) {
+      if (f.whitelisted) continue;
+      if (!labels[f.label]) labels[f.label] = { count: 0, level: f.level };
+      labels[f.label].count++;
+    }
+    const bgColor = data.status === 'yellow' ? 'rgba(234,179,8,.08)' : 'rgba(239,68,68,.08)';
+    const borderColor = data.status === 'yellow' ? 'rgba(234,179,8,.25)' : 'rgba(239,68,68,.25)';
+    reasonHtml = '<div style="background:' + bgColor + ';border:1px solid ' + borderColor + ';border-radius:var(--radius);padding:10px 14px;margin-bottom:12px;font-size:13px;color:var(--text-primary)">'
+      + '<strong>判定理由:</strong> 以下のパターンがコードブロック外で検出されました。<ul style="margin:6px 0 0;padding-left:20px;line-height:1.8">';
+    for (const [label, info] of Object.entries(labels)) {
+      const dot = info.level === 'high' ? '🔴' : '🟡';
+      reasonHtml += '<li>' + dot + ' <strong>' + esc(label) + '</strong> — ' + info.count + '件</li>';
+    }
+    reasonHtml += '</ul></div>';
+  }
+  if (data.codeBlockSkipped) {
+    reasonHtml += '<div style="font-size:12px;color:var(--text-muted);margin-bottom:8px">ℹ️ コードブロック内の ' + data.codeBlockSkipped + ' 件はサンプルコードのため判定から除外されています。</div>';
+  }
+
   let html = `
     <div class="modal-header">
       <span>🔍 Scan: ${esc(name)}</span>
@@ -2355,20 +2416,31 @@ function showScanDetail(name) {
     <div style="padding:0 20px 16px">
       <div class="scan-summary">
         <div class="scan-stat"><span class="dot" style="background:${statusColor}"></span><strong>${statusLabel}</strong></div>
-        <div class="scan-stat">Files scanned: <strong>${data.filesScanned}</strong></div>
+        <div class="scan-stat">Files: <strong>${data.filesScanned}</strong></div>
         <div class="scan-stat"><span class="dot red"></span>High: <strong>${data.highCount}</strong></div>
-        <div class="scan-stat"><span class="dot yellow"></span>Medium: <strong>${data.medCount}</strong></div>
+        <div class="scan-stat"><span class="dot yellow"></span>Med: <strong>${data.medCount}</strong></div>
       </div>
+      ${reasonHtml}
       <div class="scan-findings">`;
   if (data.findings.length === 0) {
     html += '<div style="text-align:center;color:var(--text-muted);padding:24px">No issues found. This skill appears safe.</div>';
   } else {
-    for (const f of data.findings) {
+    for (let fi = 0; fi < data.findings.length; fi++) {
+      const f = data.findings[fi];
+      const wlKey = f.file + ':' + f.label;
+      const checked = f.whitelisted ? ' checked' : '';
+      const wlClass = f.whitelisted ? ' whitelisted' : '';
       html += `
-        <div class="scan-finding ${f.level}">
+        <div class="scan-finding ${f.level}${wlClass}" id="scan-f-${fi}">
           <div class="scan-finding-header">
             <span class="scan-finding-label">${esc(f.label)}</span>
-            <span class="scan-finding-loc">${esc(f.file)}:${f.line}</span>
+            <div style="display:flex;align-items:center;gap:8px">
+              <span class="scan-finding-loc">${esc(f.file)}:${f.line}</span>
+              <div class="scan-finding-wl">
+                <input type="checkbox" id="scan-wl-${fi}" data-key="${esc(wlKey)}" data-skill="${esc(name)}"${checked} onchange="toggleScanWhitelist(this, ${fi})">
+                <label for="scan-wl-${fi}">OK</label>
+              </div>
+            </div>
           </div>
           <div class="scan-finding-snippet">${esc(f.snippet)}</div>
         </div>`;
@@ -2392,6 +2464,44 @@ function showScanDetail(name) {
 function closeScanModal() {
   const m = document.getElementById('scanModal');
   if (m) m.classList.remove('visible');
+}
+
+async function toggleScanWhitelist(checkbox, findingIndex) {
+  const skill = checkbox.dataset.skill;
+  const key = checkbox.dataset.key;
+  const finding = document.getElementById('scan-f-' + findingIndex);
+
+  // Collect all current whitelist keys from checkboxes in the modal
+  const keys = [];
+  document.querySelectorAll('#scanModalContent input[type="checkbox"][data-skill="' + skill + '"]').forEach(cb => {
+    if (cb.checked) keys.push(cb.dataset.key);
+  });
+  // Deduplicate
+  const uniqueKeys = [...new Set(keys)];
+
+  // Update visual
+  if (checkbox.checked) {
+    finding.classList.add('whitelisted');
+  } else {
+    finding.classList.remove('whitelisted');
+  }
+
+  // Save to server
+  try {
+    await fetch('/api/skills/' + encodeURIComponent(skill) + '/scan/whitelist', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ keys: uniqueKeys })
+    });
+    // Re-scan to update badge status
+    const data = await scanSkill(skill);
+    if (data) {
+      // Update the detail data without closing modal
+      skillScanDetails[skill] = data;
+    }
+  } catch (e) {
+    console.error('Failed to update whitelist', e);
+  }
 }
 
 // ===== Skill selector (sidebar popup) =====
@@ -2532,24 +2642,49 @@ async function loadComponentVersions() {
   try {
     const versions = await api('/versions');
     const components = [
-      { key: 'skills', icon: '🧬', label: 'Agent Skills' },
+      { key: 'coreclaw', icon: '🐾', label: 'CoreClaw' },
       { key: 'copilot', icon: '🤖', label: 'GitHub Copilot CLI' },
     ];
     container.innerHTML = components.map(c => {
       const v = versions[c.key] || { version: 'unknown', description: '' };
-      const showUpdate = c.key === 'copilot';
+      const showButtons = (c.key === 'copilot' || c.key === 'coreclaw');
       return `<div class="component-item">
         <span class="component-icon">${c.icon}</span>
         <div class="component-info">
           <div class="component-name">${c.label}</div>
-          <div class="component-ver">${esc(v.version)}</div>
+          <div class="component-ver" id="ver-${c.key}">${esc(v.version)}</div>
           ${v.description ? `<div class="component-desc">${esc(v.description)}</div>` : ''}
         </div>
-        ${showUpdate ? `<button class="btn-update" id="update-${c.key}" onclick="updateComponent('${c.key}')">Update</button>` : ''}
+        ${showButtons ? `<button class="btn-check" id="check-${c.key}" onclick="checkComponent('${c.key}')">Check</button><button class="btn-update" id="update-${c.key}" onclick="updateComponent('${c.key}')" disabled>Update</button>` : ''}
       </div>`;
     }).join('');
   } catch {
     container.innerHTML = '<div style="color:var(--text-muted);font-size:12px">Failed to load versions</div>';
+  }
+}
+
+async function checkComponent(component) {
+  const btn = document.getElementById('check-' + component);
+  const updateBtn = document.getElementById('update-' + component);
+  const verEl = document.getElementById('ver-' + component);
+  if (!btn) return;
+  btn.textContent = '⏳ Checking...';
+  btn.disabled = true;
+  try {
+    const result = await api('/check/' + component, { method: 'POST' });
+    if (result.available) {
+      btn.textContent = '🔔 ' + result.message;
+      btn.classList.add('has-update');
+      if (updateBtn) { updateBtn.disabled = false; }
+      if (verEl && result.latest) { verEl.textContent = result.current + ' → ' + result.latest; }
+    } else {
+      btn.textContent = '✅ ' + result.message;
+      btn.classList.add('up-to-date');
+      setTimeout(() => { btn.textContent = 'Check'; btn.disabled = false; btn.className = 'btn-check'; }, 3000);
+    }
+  } catch {
+    btn.textContent = '❌ Error';
+    setTimeout(() => { btn.textContent = 'Check'; btn.disabled = false; btn.className = 'btn-check'; }, 3000);
   }
 }
 
@@ -2594,7 +2729,7 @@ async function showSettings() {
     document.getElementById('settingsAzureKey').value = settings.azure_openai_api_key || '';
     document.getElementById('settingsAzureEndpoint').value = settings.azure_openai_endpoint || '';
     document.getElementById('settingsGithubUser').value = settings.github_username || '';
-    document.getElementById('settingsGithubRepo').value = settings.sync_repository || '';
+
     document.getElementById('settingsOllamaUrl').value = settings.ollama_url || 'http://localhost:11434';
     document.getElementById('settingsOllamaModel').value = settings.ollama_model || '';
     selectProvider(settings.ai_provider || 'openai');
@@ -2622,7 +2757,7 @@ async function saveSettings() {
     ollama_url: document.getElementById('settingsOllamaUrl').value.trim(),
     ollama_model: document.getElementById('settingsOllamaModel').value.trim(),
     github_username: document.getElementById('settingsGithubUser').value.trim(),
-    sync_repository: document.getElementById('settingsGithubRepo').value.trim(),
+
     mcp_servers: JSON.stringify(mcpServers.filter(s => s.name && s.command)),
   };
   await api('/settings', {

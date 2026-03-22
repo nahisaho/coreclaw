@@ -50,7 +50,6 @@ const SETTINGS_KEYS = [
   'ollama_url',
   'ollama_model',
   'github_username',
-  'sync_repository',
   'mcp_servers',
 ] as const;
 
@@ -73,6 +72,31 @@ function loadSettings(): SettingsMap {
 function saveSettings(settings: SettingsMap): void {
   fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
   fs.writeFileSync(settingsPath(), JSON.stringify(settings, null, 2), { mode: 0o600 });
+}
+
+// ---------------------------------------------------------------------------
+// Scan whitelist persistence (stored in data/scan-whitelist.json)
+// ---------------------------------------------------------------------------
+
+type ScanWhitelist = Record<string, string[]>; // skillName -> array of "file:label" keys
+
+function scanWhitelistPath(): string {
+  return path.join(DATA_DIR, 'scan-whitelist.json');
+}
+
+function loadScanWhitelist(): ScanWhitelist {
+  const p = scanWhitelistPath();
+  if (!fs.existsSync(p)) return {};
+  try {
+    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+  } catch {
+    return {};
+  }
+}
+
+function saveScanWhitelist(wl: ScanWhitelist): void {
+  fs.mkdirSync(path.dirname(scanWhitelistPath()), { recursive: true });
+  fs.writeFileSync(scanWhitelistPath(), JSON.stringify(wl, null, 2));
 }
 
 // ---------------------------------------------------------------------------
@@ -695,6 +719,15 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     return;
   }
 
+  // POST /api/check/:component — check if update is available
+  const checkMatch = pathname.match(/^\/api\/check\/(.+)$/);
+  if (method === 'POST' && checkMatch) {
+    const component = checkMatch[1];
+    const result = await checkComponentUpdate(component);
+    sendJson(res, 200, result);
+    return;
+  }
+
   // POST /api/update/:component — update a component
   const updateMatch = pathname.match(/^\/api\/update\/(.+)$/);
   if (method === 'POST' && updateMatch) {
@@ -760,6 +793,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     const md = `---\nname: ${name}\ndescription: |\n  ${description || 'No description'}\n---\n\n${content || 'You are a helpful AI assistant.'}\n`;
     fs.writeFileSync(path.join(skillsDir, 'SKILL.md'), md, 'utf-8');
     sendJson(res, 201, { name, description });
+    return;
+  }
+
+  // PUT /api/skills/:name/scan/whitelist — update whitelist for a skill
+  const wlMatch = pathname.match(/^\/api\/skills\/([^/]+)\/scan\/whitelist$/);
+  if (method === 'PUT' && wlMatch) {
+    const name = wlMatch[1].replace(/[^a-zA-Z0-9_-]/g, '');
+    if (!name) { sendJson(res, 400, { error: 'Invalid skill name' }); return; }
+    const body = JSON.parse(await readBody(req));
+    if (!Array.isArray(body.keys)) { sendJson(res, 400, { error: 'Expected { keys: string[] }' }); return; }
+    const wl = loadScanWhitelist();
+    wl[name] = body.keys.map((k: unknown) => String(k));
+    saveScanWhitelist(wl);
+    sendJson(res, 200, { name, whitelistedCount: wl[name].length });
     return;
   }
 
@@ -892,34 +939,59 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       { pattern: /\b(unlink|rmSync|rmdirSync)\b/gi, label: 'File removal API' },
     ];
 
-    const findings: { file: string; line: number; level: 'high' | 'medium'; label: string; snippet: string }[] = [];
+    const findings: { file: string; line: number; level: 'high' | 'medium'; label: string; snippet: string; inCodeBlock?: boolean }[] = [];
 
     for (const f of allFiles) {
       const lines = f.content.split('\n');
+      const isMd = f.rel.endsWith('.md');
+      let inCodeBlock = false;
+      let inFrontmatter = false;
       for (let i = 0; i < lines.length; i++) {
         const line = lines[i];
-        // Skip markdown comments and frontmatter
+        // Track YAML frontmatter (--- delimited, only at file start)
+        if (isMd && i === 0 && line.trim() === '---') { inFrontmatter = true; continue; }
+        if (inFrontmatter && line.trim() === '---') { inFrontmatter = false; continue; }
+        if (inFrontmatter) continue;
+        // Track fenced code blocks in markdown files
+        if (isMd && line.trim().startsWith('```')) { inCodeBlock = !inCodeBlock; continue; }
+        // Skip markdown headings
         if (line.trim().startsWith('#') && !line.trim().startsWith('#!')) continue;
         for (const rule of highRiskPatterns) {
           rule.pattern.lastIndex = 0;
           if (rule.pattern.test(line)) {
-            findings.push({ file: f.rel, line: i + 1, level: 'high', label: rule.label, snippet: line.trim().slice(0, 120) });
+            findings.push({ file: f.rel, line: i + 1, level: 'high', label: rule.label, snippet: line.trim().slice(0, 120), inCodeBlock });
           }
         }
         for (const rule of medRiskPatterns) {
           rule.pattern.lastIndex = 0;
           if (rule.pattern.test(line)) {
-            findings.push({ file: f.rel, line: i + 1, level: 'medium', label: rule.label, snippet: line.trim().slice(0, 120) });
+            findings.push({ file: f.rel, line: i + 1, level: 'medium', label: rule.label, snippet: line.trim().slice(0, 120), inCodeBlock });
           }
         }
       }
     }
 
-    const highCount = findings.filter(f => f.level === 'high').length;
-    const medCount = findings.filter(f => f.level === 'medium').length;
+    // Findings inside code blocks are informational only — don't count toward status
+    const actionableFindings = findings.filter(f => !f.inCodeBlock);
+
+    // Apply whitelist — whitelisted findings are excluded from status calculation
+    const whitelist = loadScanWhitelist();
+    const wlKeys = new Set(whitelist[name] || []);
+    const nonWhitelisted = actionableFindings.filter(f => !wlKeys.has(`${f.file}:${f.label}`));
+    const whitelistedCount = actionableFindings.length - nonWhitelisted.length;
+    const highCount = nonWhitelisted.filter(f => f.level === 'high').length;
+    const medCount = nonWhitelisted.filter(f => f.level === 'medium').length;
     const status: 'green' | 'yellow' | 'red' = highCount > 0 ? 'red' : medCount > 0 ? 'yellow' : 'green';
 
-    sendJson(res, 200, { name, status, filesScanned: allFiles.length, findings, highCount, medCount });
+    const codeBlockCount = findings.filter(f => f.inCodeBlock).length;
+
+    // Mark whitelisted findings in the response
+    const findingsWithWl = actionableFindings.map(f => ({
+      ...f,
+      whitelisted: wlKeys.has(`${f.file}:${f.label}`),
+    }));
+
+    sendJson(res, 200, { name, status, filesScanned: allFiles.length, findings: findingsWithWl, highCount, medCount, codeBlockSkipped: codeBlockCount, whitelistedCount });
     return;
   }
 
@@ -1142,17 +1214,18 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
 function getComponentVersions(): Record<string, { version: string; description: string }> {
   const versions: Record<string, { version: string; description: string }> = {};
 
-  // Agent Skills (local)
-  const skillCount = listAvailableSkills().length;
-  versions.skills = {
-    version: skillCount > 0 ? `${skillCount} skills` : 'none',
-    description: 'Agent Skills',
-  };
+  // CoreClaw
+  try {
+    const pkg = JSON.parse(fs.readFileSync(path.join(process.cwd(), 'package.json'), 'utf-8'));
+    versions.coreclaw = { version: pkg.version || 'unknown', description: 'CoreClaw' };
+  } catch {
+    versions.coreclaw = { version: 'unknown', description: 'CoreClaw' };
+  }
 
   // GitHub Copilot CLI
   try {
-    const out = execSync('copilot --version 2>&1', { encoding: 'utf-8', timeout: 5000 }).trim();
-    const match = out.match(/([\d.]+)/);
+    const out = execSync('copilot --version 2>&1', { encoding: 'utf-8', timeout: 5000 }).trim().split('\n')[0];
+    const match = out.match(/(\d+\.\d+\.\d+)/);
     versions.copilot = { version: match ? match[1] : out, description: 'GitHub Copilot CLI' };
   } catch {
     versions.copilot = { version: 'not installed', description: '' };
@@ -1161,17 +1234,90 @@ function getComponentVersions(): Record<string, { version: string; description: 
   return versions;
 }
 
+async function checkComponentUpdate(component: string): Promise<{ available: boolean; current: string; latest?: string; message: string }> {
+  const projectRoot = process.cwd();
+  try {
+    switch (component) {
+      case 'coreclaw': {
+        const gitEnv = { GIT_TERMINAL_PROMPT: '0' };
+        try {
+          execSync('git fetch origin main 2>&1', { cwd: projectRoot, encoding: 'utf-8', timeout: 30000, env: { ...process.env, ...gitEnv } });
+        } catch {
+          return { available: false, current: 'unknown', message: 'Failed to fetch from remote.' };
+        }
+        const local = execSync('git rev-parse HEAD', { cwd: projectRoot, encoding: 'utf-8', timeout: 5000 }).trim();
+        const remote = execSync('git rev-parse origin/main', { cwd: projectRoot, encoding: 'utf-8', timeout: 5000 }).trim();
+        const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+        if (local === remote) {
+          return { available: false, current: pkg.version, message: 'Up to date' };
+        }
+        // Try to get remote package.json version
+        let remoteVer = '';
+        try {
+          remoteVer = execSync('git show origin/main:package.json 2>/dev/null', { cwd: projectRoot, encoding: 'utf-8', timeout: 5000 });
+          remoteVer = JSON.parse(remoteVer).version || '';
+        } catch { remoteVer = ''; }
+        return { available: true, current: pkg.version, latest: remoteVer || undefined, message: remoteVer ? `v${remoteVer} available` : 'Update available' };
+      }
+      case 'copilot': {
+        const out = execSync('copilot update --check 2>&1 || copilot --version 2>&1', { encoding: 'utf-8', timeout: 30000 }).trim();
+        const curMatch = execSync('copilot --version 2>&1', { encoding: 'utf-8', timeout: 5000 }).trim().split('\n')[0].match(/(\d+\.\d+\.\d+)/);
+        const current = curMatch ? curMatch[1] : 'unknown';
+        if (out.includes('No update needed')) {
+          return { available: false, current, message: 'Up to date' };
+        }
+        const latestMatch = out.match(/latest release is v?(\d+\.\d+\.\d+)/);
+        const latest = latestMatch ? latestMatch[1] : undefined;
+        if (latest && latest === current) {
+          return { available: false, current, message: 'Up to date' };
+        }
+        return { available: !!latest && latest !== current, current, latest, message: latest ? `v${latest} available` : 'Up to date' };
+      }
+      default:
+        return { available: false, current: 'unknown', message: `Unknown component: ${component}` };
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    return { available: false, current: 'unknown', message: `Check failed: ${msg.slice(0, 100)}` };
+  }
+}
+
 async function updateComponent(component: string): Promise<{ ok: boolean; message: string; version?: string }> {
   const projectRoot = process.cwd();
 
   try {
     switch (component) {
+      case 'coreclaw': {
+        logger.info('Updating CoreClaw...');
+        const projectRoot = process.cwd();
+        const gitEnv = { GIT_TERMINAL_PROMPT: '0' };
+        try {
+          execSync('git fetch origin main 2>&1', { cwd: projectRoot, encoding: 'utf-8', timeout: 30000, env: { ...process.env, ...gitEnv } });
+        } catch (fetchErr) {
+          return { ok: false, message: 'Failed to fetch from remote. Check network and git configuration.' };
+        }
+        const local = execSync('git rev-parse HEAD', { cwd: projectRoot, encoding: 'utf-8', timeout: 5000 }).trim();
+        const remote = execSync('git rev-parse origin/main', { cwd: projectRoot, encoding: 'utf-8', timeout: 5000 }).trim();
+        if (local === remote) {
+          const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+          return { ok: true, message: `CoreClaw v${pkg.version} is already up to date`, version: pkg.version };
+        }
+        execSync('git pull origin main 2>&1', { cwd: projectRoot, encoding: 'utf-8', timeout: 60000, env: { ...process.env, ...gitEnv } });
+        execSync('npm install 2>&1', { cwd: projectRoot, encoding: 'utf-8', timeout: 120000 });
+        const pkg = JSON.parse(fs.readFileSync(path.join(projectRoot, 'package.json'), 'utf-8'));
+        return { ok: true, message: `CoreClaw updated to v${pkg.version}. Please restart the server.`, version: pkg.version };
+      }
+
       case 'copilot': {
         logger.info('Updating GitHub Copilot CLI...');
-        execSync('npm install -g @github/copilot@latest 2>&1', { encoding: 'utf-8', timeout: 120000 });
-        const out = execSync('copilot --version 2>&1', { encoding: 'utf-8', timeout: 5000 }).trim();
-        const match = out.match(/([\d.]+)/);
+        const updateOut = execSync('copilot update 2>&1', { encoding: 'utf-8', timeout: 120000 }).trim();
+        const out = execSync('copilot --version 2>&1', { encoding: 'utf-8', timeout: 5000 }).trim().split('\n')[0];
+        const match = out.match(/(\d+\.\d+\.\d+)/);
         const ver = match ? match[1] : 'latest';
+        const noUpdate = updateOut.includes('No update needed');
+        if (noUpdate) {
+          return { ok: true, message: `Copilot CLI v${ver} is already up to date`, version: ver };
+        }
         // Rebuild agent container with latest Copilot
         logger.info('Rebuilding agent container...');
         execSync(`docker build --build-arg BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ) -t coreclaw-agent:latest ${path.join(projectRoot, 'container')} 2>&1`, {
