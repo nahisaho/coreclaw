@@ -20,6 +20,7 @@ export interface Experiment {
   sync_repo: string; // per-experiment sync repository (owner/repo)
   skill: string; // default skill name for this chat
   mcp_servers: string; // JSON array of enabled MCP server names (empty = all)
+  pinned: number; // 1 = pinned to top of sidebar, 0 = normal
 }
 
 export interface ExperimentMessage {
@@ -88,6 +89,9 @@ export function initExperimentsDb(database: Database.Database): void {
   if (!expCols.find(c => c.name === 'mcp_servers')) {
     db.exec("ALTER TABLE experiments ADD COLUMN mcp_servers TEXT DEFAULT ''");
   }
+  if (!expCols.find(c => c.name === 'pinned')) {
+    db.exec("ALTER TABLE experiments ADD COLUMN pinned INTEGER DEFAULT 0");
+  }
   const msgCols = db.prepare("PRAGMA table_info('experiment_messages')").all() as { name: string }[];
   if (!msgCols.find(c => c.name === 'user_id')) {
     db.exec("ALTER TABLE experiment_messages ADD COLUMN user_id TEXT DEFAULT ''");
@@ -120,14 +124,15 @@ export function createExperiment(name: string, description = '', createdBy = '',
     sync_repo: syncRepo,
     skill,
     mcp_servers: mcpServers,
+    pinned: 0,
   };
 
   getDb()
     .prepare(
-      `INSERT INTO experiments (id, name, description, status, created_at, updated_at, created_by, sync_repo, skill, mcp_servers)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+      `INSERT INTO experiments (id, name, description, status, created_at, updated_at, created_by, sync_repo, skill, mcp_servers, pinned)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
     )
-    .run(exp.id, exp.name, exp.description, exp.status, exp.created_at, exp.updated_at, exp.created_by, exp.sync_repo, exp.skill, exp.mcp_servers);
+    .run(exp.id, exp.name, exp.description, exp.status, exp.created_at, exp.updated_at, exp.created_by, exp.sync_repo, exp.skill, exp.mcp_servers, exp.pinned);
 
   // Create experiment artifacts directory
   const dir = experimentDir(id);
@@ -177,17 +182,17 @@ export function listExperiments(
 ): Experiment[] {
   if (status) {
     return getDb()
-      .prepare('SELECT * FROM experiments WHERE status = ? ORDER BY updated_at DESC')
+      .prepare('SELECT * FROM experiments WHERE status = ? ORDER BY pinned DESC, updated_at DESC')
       .all(status) as Experiment[];
   }
   return getDb()
-    .prepare('SELECT * FROM experiments ORDER BY updated_at DESC')
+    .prepare('SELECT * FROM experiments ORDER BY pinned DESC, updated_at DESC')
     .all() as Experiment[];
 }
 
 export function updateExperiment(
   id: string,
-  updates: Partial<Pick<Experiment, 'name' | 'description' | 'status' | 'sync_repo' | 'skill' | 'mcp_servers'>>,
+  updates: Partial<Pick<Experiment, 'name' | 'description' | 'status' | 'sync_repo' | 'skill' | 'mcp_servers' | 'pinned'>>,
 ): Experiment | null {
   const exp = getExperiment(id);
   if (!exp) return null;
@@ -198,15 +203,16 @@ export function updateExperiment(
   const sync_repo = updates.sync_repo ?? exp.sync_repo;
   const skill = updates.skill ?? exp.skill;
   const mcp_servers = updates.mcp_servers ?? exp.mcp_servers;
+  const pinned = updates.pinned ?? exp.pinned;
   const updated_at = new Date().toISOString();
 
   getDb()
     .prepare(
-      'UPDATE experiments SET name = ?, description = ?, status = ?, sync_repo = ?, skill = ?, mcp_servers = ?, updated_at = ? WHERE id = ?',
+      'UPDATE experiments SET name = ?, description = ?, status = ?, sync_repo = ?, skill = ?, mcp_servers = ?, pinned = ?, updated_at = ? WHERE id = ?',
     )
-    .run(name, description, status, sync_repo, skill, mcp_servers, updated_at, id);
+    .run(name, description, status, sync_repo, skill, mcp_servers, pinned, updated_at, id);
 
-  return { ...exp, name, description, status, sync_repo, skill, mcp_servers, updated_at };
+  return { ...exp, name, description, status, sync_repo, skill, mcp_servers, pinned, updated_at };
 }
 
 export function deleteExperiment(id: string): boolean {

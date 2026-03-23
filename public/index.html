@@ -200,6 +200,9 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   justify-content: center; transition: all .15s; padding: 0;
 }
 .exp-action-btn:hover { background: var(--bg-hover); border-color: var(--text-muted); }
+.exp-action-btn.pinned { color: var(--accent); }
+.experiment-item.pinned .exp-name::before { content: '📌 '; font-size: 12px; }
+.pinned-separator { font-size: 11px; color: var(--text-muted); padding: 6px 12px 2px; border-top: 1px solid var(--border); margin-top: 4px; }
 
 .sidebar-footer {
   padding: 10px 12px; border-top: 1px solid var(--border);
@@ -1342,10 +1345,13 @@ function renderExperimentList() {
     (e.description || '').toLowerCase().includes(search)
   );
 
-  list.innerHTML = filtered.map(e => {
+  list.innerHTML = filtered.map((e, idx) => {
     const date = new Date(e.updated_at).toLocaleDateString('ja-JP', { month: 'short', day: 'numeric' });
     const statusClass = e.status === 'archived' ? 'archived' : e.status === 'completed' ? 'completed' : '';
-    return `<div class="experiment-item ${e.id === currentExpId ? 'active' : ''}"
+    const isPinned = e.pinned;
+    const prevPinned = idx > 0 && filtered[idx - 1].pinned;
+    const separator = !isPinned && prevPinned ? '<div class="pinned-separator"></div>' : '';
+    return `${separator}<div class="experiment-item ${e.id === currentExpId ? 'active' : ''} ${isPinned ? 'pinned' : ''}"
                 onclick="selectExperiment('${e.id}')">
       <div class="exp-name">${esc(e.name)}</div>
       <div class="exp-meta">
@@ -1354,6 +1360,7 @@ function renderExperimentList() {
         <span>${date}</span>
       </div>
       <div class="exp-actions">
+        <button class="exp-action-btn ${isPinned ? 'pinned' : ''}" onclick="togglePin('${e.id}', ${isPinned ? 0 : 1}, event)" title="${isPinned ? 'Unpin' : 'Pin'}">${isPinned ? '📌' : '📍'}</button>
         <button class="exp-action-btn" onclick="showSidebarRename('${e.id}', event)" title="Rename">✏️</button>
         <button class="exp-action-btn" onclick="showSidebarDelete('${e.id}', event)" title="Delete">🗑</button>
       </div>
@@ -1546,6 +1553,16 @@ async function submitDelete() {
   document.getElementById('messagesArea').classList.remove('visible');
   document.getElementById('inputArea').classList.remove('visible');
   document.getElementById('messagesArea').innerHTML = '';
+  await loadExperiments();
+}
+
+// Pin/unpin a chat group
+async function togglePin(expId, pinned, event) {
+  event.stopPropagation();
+  await api(`/experiments/${expId}`, {
+    method: 'PATCH',
+    body: JSON.stringify({ pinned }),
+  });
   await loadExperiments();
 }
 
