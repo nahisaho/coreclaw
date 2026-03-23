@@ -974,14 +974,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   <!-- Skill Selector Popup (sidebar / chat header) -->
   <div class="search-popup" id="skillSelectorPopup" onclick="if(event.target===this)closeSkillSelector()">
     <div class="search-popup-content">
-      <div class="skill-selector-header">Select Skills</div>
+      <div class="skill-selector-header">Select Skill</div>
       <div class="skill-selector-toolbar">
         <input type="text" id="skillSelectorSearch" placeholder="Filter skills..." oninput="filterSkillSelectorList(this.value)">
         <span class="skill-selector-count" id="skillSelectorCount"></span>
-        <div class="skill-selector-actions">
-          <button onclick="toggleAllSkillsForChat(true)">All</button>
-          <button onclick="toggleAllSkillsForChat(false)">None</button>
-        </div>
       </div>
       <div class="skill-selector-list" id="skillSelectorList">
         <div class="search-empty">Loading skills...</div>
@@ -992,14 +988,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   <!-- Modal Skill Selector Popup (New Chat / Edit Chat) -->
   <div class="search-popup" id="modalSkillSelectorPopup" style="z-index:1100" onclick="if(event.target===this)closeModalSkillSelector()">
     <div class="search-popup-content">
-      <div class="skill-selector-header">Select Skills</div>
+      <div class="skill-selector-header">Select Skill</div>
       <div class="skill-selector-toolbar">
         <input type="text" id="modalSkillSearch" placeholder="Filter skills..." oninput="renderModalSkillList()">
         <span class="skill-selector-count" id="modalSkillCount"></span>
-        <div class="skill-selector-actions">
-          <button onclick="toggleAllModalSkills(true)">All</button>
-          <button onclick="toggleAllModalSkills(false)">None</button>
-        </div>
       </div>
       <div class="skill-selector-list" id="modalSkillList"></div>
     </div>
@@ -1063,7 +1055,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
     <input type="text" id="expNameInput" placeholder="e.g. Code review discussion">
     <label>Skills</label>
     <div class="skill-picker-row">
-      <span class="skill-picker-badge" id="expSkillBadge">All Skills</span>
+      <span class="skill-picker-badge" id="expSkillBadge">Select...</span>
       <button type="button" class="skill-picker-btn" onclick="openModalSkillSelector('exp')">Select...</button>
     </div>
     <input type="hidden" id="expSkillValue" value="">
@@ -1088,7 +1080,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
     <input type="text" id="renameInput" placeholder="Chat name">
     <label>Skills</label>
     <div class="skill-picker-row">
-      <span class="skill-picker-badge" id="editSkillBadge">All Skills</span>
+      <span class="skill-picker-badge" id="editSkillBadge">Select...</span>
       <button type="button" class="skill-picker-btn" onclick="openModalSkillSelector('edit')">Select...</button>
     </div>
     <input type="hidden" id="editSkillValue" value="">
@@ -2682,8 +2674,7 @@ async function renderSkillSelectorList() {
   }
   const container = document.getElementById('skillSelectorList');
   const exp = currentExpId ? experiments.find(e => e.id === currentExpId) : null;
-  const currentSkills = exp && exp.skill ? exp.skill.split(',').map(s => s.trim()).filter(Boolean) : [];
-  const isAll = currentSkills.length === 0;
+  const currentSkill = exp && exp.skill ? exp.skill.trim() : '';
   const filter = (document.getElementById('skillSelectorSearch')?.value || '').toLowerCase();
 
   const filtered = filter
@@ -2691,25 +2682,15 @@ async function renderSkillSelectorList() {
     : cachedSkills;
 
   // Update count
-  const selectedCount = isAll ? cachedSkills.length : currentSkills.length;
   const countEl = document.getElementById('skillSelectorCount');
-  if (countEl) countEl.textContent = `${selectedCount}/${cachedSkills.length}`;
+  if (countEl) countEl.textContent = currentSkill || '';
 
   let html = '';
-  if (!filter) {
-    html += `<div class="skill-selector-item ${isAll ? 'active' : ''}" onclick="toggleSkillForChat('__all__')">
-      <div>
-        <div class="skill-sel-name">All Skills</div>
-        <div class="skill-sel-desc">Use all available skills</div>
-      </div>
-      ${isAll ? '<span class="skill-sel-check">\u2713</span>' : ''}
-    </div>`;
-  }
   if (filtered.length === 0) {
     html += '<div class="skill-selector-empty">No matching skills</div>';
   } else {
     html += filtered.map(s => {
-      const selected = isAll || currentSkills.includes(s.name);
+      const selected = currentSkill === s.name;
       return `
       <div class="skill-selector-item ${selected ? 'active' : ''}" onclick="toggleSkillForChat('${esc(s.name)}')">
         <div>
@@ -2730,49 +2711,15 @@ function filterSkillSelectorList(query) {
   renderSkillSelectorList();
 }
 
-async function toggleAllSkillsForChat(selectAll) {
-  if (!currentExpId) return;
-  const exp = experiments.find(e => e.id === currentExpId);
-  if (!exp) return;
-  // selectAll=true → '' (all skills); selectAll=false → '' (reset to all, since no-skills is not meaningful)
-  await api('/experiments/' + currentExpId, { method: 'PUT', body: JSON.stringify({ skill: '' }) });
-  exp.skill = '';
-  updateChatSkillBadge();
-  updateSidebarSkillBadge(exp.skill);
-  await renderSkillSelectorList();
-}
-
 async function toggleSkillForChat(skillName) {
   if (!currentExpId) return;
   const exp = experiments.find(e => e.id === currentExpId);
   if (!exp) return;
-  const currentSkills = exp.skill ? exp.skill.split(',').map(s => s.trim()).filter(Boolean) : [];
 
-  let newSkills;
-  if (skillName === '__all__') {
-    // Toggle: if currently filtered, switch to all; if already all, stay all
-    newSkills = [];
-  } else {
-    const isAll = currentSkills.length === 0;
-    if (isAll) {
-      // Was "all" — now select only this one skill by deselecting everything else
-      // Actually, toggle off this skill from "all" = all except this one
-      newSkills = cachedSkills.map(s => s.name).filter(n => n !== skillName);
-    } else if (currentSkills.includes(skillName)) {
-      // Deselect this skill
-      newSkills = currentSkills.filter(n => n !== skillName);
-      if (newSkills.length === 0) newSkills = []; // no skills selected = all
-    } else {
-      // Select this skill
-      newSkills = [...currentSkills, skillName];
-    }
-    // If all skills are now selected, reset to empty (= all)
-    if (newSkills.length >= cachedSkills.length) newSkills = [];
-  }
+  const skillStr = skillName;
 
-  const skillStr = newSkills.join(',');
   await api('/experiments/' + currentExpId, {
-    method: 'PUT',
+    method: 'PATCH',
     body: JSON.stringify({ skill: skillStr }),
   });
   exp.skill = skillStr;
@@ -2793,15 +2740,13 @@ function updateChatSkillBadge() {
     badge.textContent = '';
     return;
   }
-  const skills = exp.skill.split(',').map(s => s.trim()).filter(Boolean);
-  badge.textContent = skills.length === 1 ? '\ud83e\udde9 ' + skills[0] : '\ud83e\udde9 ' + skills.length + ' skills';
+  badge.textContent = '\ud83e\udde9 ' + exp.skill.trim();
 }
 
 function updateSidebarSkillBadge(skillStr) {
   const badge = document.getElementById('activeSkillBadge');
   if (!skillStr) { badge.textContent = ''; return; }
-  const skills = skillStr.split(',').map(s => s.trim()).filter(Boolean);
-  badge.textContent = skills.length === 1 ? skills[0] : skills.length + ' skills';
+  badge.textContent = skillStr.trim();
 }
 
 async function changeChatSkill() {
@@ -2821,17 +2766,10 @@ function updateSkillPickerBadge(prefix, skillStr) {
   const badge = document.getElementById(prefix + 'SkillBadge');
   if (!badge) return;
   if (!skillStr) {
-    badge.textContent = 'All Skills';
+    badge.textContent = 'Select...';
     return;
   }
-  const skills = skillStr.split(',').map(s => s.trim()).filter(Boolean);
-  if (skills.length === 0) {
-    badge.textContent = 'All Skills';
-  } else if (skills.length <= 3) {
-    badge.textContent = skills.join(', ');
-  } else {
-    badge.textContent = skills.slice(0, 2).join(', ') + ' +' + (skills.length - 2);
-  }
+  badge.textContent = skillStr.trim();
 }
 
 async function openModalSkillSelector(prefix) {
@@ -2841,8 +2779,7 @@ async function openModalSkillSelector(prefix) {
   }
   const skillStr = document.getElementById(prefix + 'SkillValue').value;
   const selected = skillStr ? skillStr.split(',').map(s => s.trim()).filter(Boolean) : [];
-  // Empty = all skills selected
-  _modalSkillSelected = new Set(selected.length > 0 ? selected : cachedSkills.map(s => s.name));
+  _modalSkillSelected = new Set(selected);
   const searchInput = document.getElementById('modalSkillSearch');
   if (searchInput) searchInput.value = '';
   renderModalSkillList();
@@ -2852,9 +2789,7 @@ async function openModalSkillSelector(prefix) {
 
 function closeModalSkillSelector() {
   document.getElementById('modalSkillSelectorPopup').classList.remove('visible');
-  // Write back selection to hidden input + badge
-  const allSelected = _modalSkillSelected.size >= cachedSkills.length;
-  const skillStr = allSelected ? '' : [..._modalSkillSelected].join(',');
+  const skillStr = [..._modalSkillSelected].join(',');
   document.getElementById(_modalSkillPrefix + 'SkillValue').value = skillStr;
   updateSkillPickerBadge(_modalSkillPrefix, skillStr);
 }
@@ -2866,20 +2801,13 @@ function renderModalSkillList() {
     ? cachedSkills.filter(s => s.name.toLowerCase().includes(filter) || (s.description || '').toLowerCase().includes(filter))
     : cachedSkills;
 
-  const isAll = _modalSkillSelected.size >= cachedSkills.length;
   const countEl = document.getElementById('modalSkillCount');
-  if (countEl) countEl.textContent = `${_modalSkillSelected.size}/${cachedSkills.length}`;
+  if (countEl) {
+    if (_modalSkillSelected.size === 1) { countEl.textContent = [..._modalSkillSelected][0]; }
+    else { countEl.textContent = ''; }
+  }
 
   let html = '';
-  if (!filter) {
-    html += `<div class="skill-selector-item ${isAll ? 'active' : ''}" onclick="modalSkillToggle('__all__')">
-      <div>
-        <div class="skill-sel-name">All Skills</div>
-        <div class="skill-sel-desc">Use all available skills</div>
-      </div>
-      ${isAll ? '<span class="skill-sel-check">\u2713</span>' : ''}
-    </div>`;
-  }
   if (filtered.length === 0) {
     html += '<div class="skill-selector-empty">No matching skills</div>';
   } else {
@@ -2902,32 +2830,7 @@ function renderModalSkillList() {
 }
 
 function modalSkillToggle(skillName) {
-  if (skillName === '__all__') {
-    // Select all
-    _modalSkillSelected = new Set(cachedSkills.map(s => s.name));
-  } else {
-    const isAll = _modalSkillSelected.size >= cachedSkills.length;
-    if (isAll) {
-      // Deselect this one from all
-      _modalSkillSelected = new Set(cachedSkills.map(s => s.name).filter(n => n !== skillName));
-    } else if (_modalSkillSelected.has(skillName)) {
-      _modalSkillSelected.delete(skillName);
-      // If none selected, revert to all
-      if (_modalSkillSelected.size === 0) _modalSkillSelected = new Set(cachedSkills.map(s => s.name));
-    } else {
-      _modalSkillSelected.add(skillName);
-    }
-    // If all are now selected, keep as full set (will be treated as "all")
-  }
-  renderModalSkillList();
-}
-
-function toggleAllModalSkills(selectAll) {
-  if (selectAll) {
-    _modalSkillSelected = new Set(cachedSkills.map(s => s.name));
-  } else {
-    _modalSkillSelected.clear();
-  }
+  _modalSkillSelected = new Set([skillName]);
   renderModalSkillList();
 }
 
