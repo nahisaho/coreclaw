@@ -58,37 +58,37 @@ Open http://localhost:3000 in your browser (port is configurable via `CORECLAW_W
 ## Architecture
 
 ```
-┌──────────────────────────────────────────────────────┐
-│  Browser (SPA)                                       │
-│  http://localhost:3000 (default)                      │
-└────────────┬─────────────────────────────────────────┘
+┌────────────────────────────────────────────────────────┐
+│  Browser (SPA)                                         │
+│  http://localhost:3000 (default)                       │
+└────────────┬───────────────────────────────────────────┘
              │ HTTP/WS
-┌────────────▼─────────────────────────────────────────┐
-│  web-server.ts (API + WebSocket)                     │
-│  ├── Settings, Skills, Experiments, Scanner APIs     │
-│  ├── Check/Update (CoreClaw + Copilot CLI)           │
-│  └── GitHub Sync                                     │
-├──────────────────────────────────────────────────────┤
-│  container-runner.ts                                 │
-│  ├── Docker spawn + volume mounts                    │
-│  ├── Skills sync to container                        │
-│  ├── MCP config injection (--additional-mcp-config)  │
-│  └── GitHub MCP tools (--enable-all-github-mcp-tools)│
-├──────────────────────────────────────────────────────┤
-│  credential-proxy.ts (:3001)                         │
-│  └── GitHub token injection for container agents     │
-└────────────┬─────────────────────────────────────────┘
+┌────────────▼───────────────────────────────────────────┐
+│  web-server.ts (API + WebSocket)                       │
+│  ├── Settings, Skills, Experiments, Scanner APIs       │
+│  ├── Check/Update (CoreClaw + Copilot CLI)             │
+│  └── GitHub Sync                                       │
+├────────────────────────────────────────────────────────┤
+│  container-runner.ts                                   │
+│  ├── Docker spawn + volume mounts                      │
+│  ├── Skills sync to container                          │
+│  ├── MCP config injection (--additional-mcp-config)    │
+│  └── GitHub MCP tools (--enable-all-github-mcp-tools)  │
+├────────────────────────────────────────────────────────┤
+│  credential-proxy.ts (:3001)                           │
+│  └── GitHub token injection for container agents       │
+└────────────┬───────────────────────────────────────────┘
              │ Docker
-┌────────────▼─────────────────────────────────────────┐
-│  coreclaw-agent:latest                               │
-│  ├── agent-runner (TypeScript)                       │
-│  │   └── copilot -p <prompt> --allow-all             │
-│  │       --additional-mcp-config @/tmp/mcp-config.json│
-│  ├── GitHub Copilot CLI (@github/copilot)            │
-│  ├── Python 3 + uv (for MCP servers like ToolUniverse)│
-│  ├── Chromium (for web automation)                   │
-│  └── CJK fonts (Japanese/Chinese/Korean support)     │
-└──────────────────────────────────────────────────────┘
+┌────────────▼───────────────────────────────────────────┐
+│  coreclaw-agent:latest                                 │
+│  ├── agent-runner (TypeScript)                         │
+│  │   └── copilot -p <prompt> --allow-all               │
+│  │       --additional-mcp-config @/tmp/mcp-config.json │
+│  ├── GitHub Copilot CLI (@github/copilot)              │
+│  ├── Python 3 + uv (for MCP servers like ToolUniverse) │
+│  ├── Chromium (for web automation)                     │
+│  └── CJK fonts (Japanese/Chinese/Korean support)       │
+└────────────────────────────────────────────────────────┘
 ```
 
 ## Project Structure
