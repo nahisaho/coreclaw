@@ -2184,9 +2184,6 @@ function escapeRegExp(s) {
 function renderMarkdown(text) {
   if (!text) return '';
   try {
-    // Add spaces around **bold** blocks adjacent to non-space chars (CJK fix)
-    text = text.replace(/(\S)\*\*(.+?)\*\*/g, '$1 **$2**');
-    text = text.replace(/\*\*(.+?)\*\*(\S)/g, '**$1** $2');
     let html = marked.parse(text);
     html = linkifyArtifacts(html);
     return html;
