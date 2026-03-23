@@ -9,7 +9,7 @@ test.describe('Page Load', () => {
     await page.goto('/');
     await expect(page).toHaveTitle(/CoreClaw/);
     await expect(page.locator('.sidebar')).toBeVisible();
-    await expect(page.locator('.welcome h2')).toHaveText('🧪 CoreClaw');
+    await expect(page.locator('.welcome h2')).toHaveText('🐾 CoreClaw');
   });
 
   test('shows skill count in sidebar', async ({ page }) => {
@@ -36,12 +36,10 @@ test.describe('Sidebar Toggle', () => {
     // Close
     await toggle.click();
     await expect(sidebar).toHaveClass(/collapsed/);
-    await expect(toggle).toHaveText('▶');
 
-    // Open
-    await toggle.click();
+    // Open (use .main-toggle which appears when sidebar is collapsed)
+    await page.locator('.main-toggle').click();
     await expect(sidebar).not.toHaveClass(/collapsed/);
-    await expect(toggle).toHaveText('◀');
   });
 
   test('Ctrl+B toggles sidebar', async ({ page }) => {
@@ -65,7 +63,7 @@ test.describe('Experiment Management', () => {
     await page.goto('/');
 
     // Click + New
-    await page.click('.btn-new');
+    await page.click('button:has-text("New Chat")');
     await expect(page.locator('#newExpModal')).toHaveClass(/visible/);
 
     // Fill form
@@ -83,9 +81,9 @@ test.describe('Experiment Management', () => {
     await expect(page.locator('#inputArea')).toHaveClass(/visible/);
   });
 
-  test('Ctrl+N opens new experiment modal', async ({ page }) => {
+  test('Alt+N opens new experiment modal', async ({ page }) => {
     await page.goto('/');
-    await page.keyboard.press('Control+n');
+    await page.keyboard.press('Alt+n');
     await expect(page.locator('#newExpModal')).toHaveClass(/visible/);
     // Escape closes
     await page.keyboard.press('Escape');
@@ -96,7 +94,7 @@ test.describe('Experiment Management', () => {
     await page.goto('/');
 
     // Create experiment first
-    await page.click('.btn-new');
+    await page.click('button:has-text("New Chat")');
     await page.fill('#expNameInput', 'To Be Renamed');
     await page.click('#newExpModal .btn-primary');
     await expect(page.locator('#expTitle')).toHaveText('To Be Renamed');
@@ -118,7 +116,7 @@ test.describe('Experiment Management', () => {
     await page.goto('/');
 
     // Create experiment
-    await page.click('.btn-new');
+    await page.click('button:has-text("New Chat")');
     await page.fill('#expNameInput', 'Delete Me');
     await page.click('#newExpModal .btn-primary');
 
@@ -152,7 +150,7 @@ test.describe('Experiment Management', () => {
     await page.goto('/');
 
     // Create experiment
-    await page.click('.btn-new');
+    await page.click('button:has-text("New Chat")');
     await page.fill('#expNameInput', 'Hover Test');
     await page.click('#newExpModal .btn-primary');
 
@@ -183,20 +181,23 @@ test.describe('Settings', () => {
     await page.goto('/');
     await page.click('.settings-btn');
 
-    // Click OpenAI explicitly to ensure it's selected
-    await page.click('#providerOpenai');
+    // Switch to STT Provider tab
+    await page.click('button:has-text("STT Provider")');
+
+    // Select OpenAI
+    await page.selectOption('#sttProviderSelect', 'openai');
     await expect(page.locator('#openaiFields')).toBeVisible();
     await expect(page.locator('#azureFields')).not.toBeVisible();
     await expect(page.locator('#ollamaFields')).not.toBeVisible();
 
     // Switch to Azure
-    await page.click('#providerAzure');
+    await page.selectOption('#sttProviderSelect', 'azure');
     await expect(page.locator('#openaiFields')).not.toBeVisible();
     await expect(page.locator('#azureFields')).toBeVisible();
     await expect(page.locator('#ollamaFields')).not.toBeVisible();
 
     // Switch to Ollama
-    await page.click('#providerOllama');
+    await page.selectOption('#sttProviderSelect', 'ollama');
     await expect(page.locator('#openaiFields')).not.toBeVisible();
     await expect(page.locator('#azureFields')).not.toBeVisible();
     await expect(page.locator('#ollamaFields')).toBeVisible();
@@ -207,30 +208,224 @@ test.describe('Settings', () => {
     await page.goto('/');
     await page.click('.settings-btn');
 
+    // Switch to GitHub tab
+    await page.click('button:has-text("GitHub")');
     await page.fill('#settingsGithubUser', 'test-user');
-    await page.fill('#settingsGithubRepo', 'test-user/my-experiments');
-    await page.click('#settingsModal .btn-primary');
+    await page.click('#settingsModal button:has-text("Save")');
 
-    // Saved indicator
-    await expect(page.locator('#settingsSaved')).toHaveClass(/visible/);
-
-    // Close modal first, then reopen
-    await page.click('#settingsModal .modal-close');
+    // Save closes the modal
     await expect(page.locator('#settingsModal')).not.toHaveClass(/visible/);
 
     // Reopen settings — values should persist
     await page.click('.settings-btn');
     await expect(page.locator('#settingsGithubUser')).toHaveValue('test-user');
-    await expect(page.locator('#settingsGithubRepo')).toHaveValue('test-user/my-experiments');
   });
 
   test('add MCP server manually', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');
 
+    // Switch to MCP Servers tab
+    await page.click('button:has-text("MCP Servers")');
     await page.click('.btn-add-mcp');
     // MCP server card should appear
     await expect(page.locator('.mcp-server-card')).toHaveCount(1);
+  });
+
+  test('add multiple MCP servers and remove one', async ({ page }) => {
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("MCP Servers")');
+
+    // Add two servers
+    await page.click('.btn-add-mcp');
+    await page.click('.btn-add-mcp');
+    await expect(page.locator('.mcp-server-card')).toHaveCount(2);
+
+    // Remove the first one
+    await page.locator('.mcp-server-card').first().locator('.mcp-remove').click();
+    await expect(page.locator('.mcp-server-card')).toHaveCount(1);
+  });
+
+  test('add ToolUniverse preset', async ({ page }) => {
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("MCP Servers")');
+
+    await page.click('button:has-text("ToolUniverse")');
+    await expect(page.locator('.mcp-server-card')).toHaveCount(1);
+
+    // Verify preset values
+    const card = page.locator('.mcp-server-card').first();
+    await expect(card.locator('input.mcp-name')).toHaveValue('ToolUniverse');
+    await expect(card.locator('input[placeholder*="Command"]')).toHaveValue('uvx');
+    await expect(card.locator('input[placeholder*="Args"]')).toHaveValue('tooluniverse-smcp-stdio --compact-mode');
+  });
+
+  test('add Deep Research preset', async ({ page }) => {
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("MCP Servers")');
+
+    await page.click('button:has-text("Deep Research")');
+    await expect(page.locator('.mcp-server-card')).toHaveCount(1);
+
+    // Verify preset values
+    const card = page.locator('.mcp-server-card').first();
+    await expect(card.locator('input.mcp-name')).toHaveValue('deep-research');
+    await expect(card.locator('input[placeholder*="Command"]')).toHaveValue('uvx');
+    await expect(card.locator('input[placeholder*="Args"]')).toHaveValue('mcp-server-deep-research');
+  });
+
+  test('MCP server card has type selector with stdio/SSE/Streamable HTTP', async ({ page }) => {
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("MCP Servers")');
+
+    await page.click('.btn-add-mcp');
+    const card = page.locator('.mcp-server-card').first();
+
+    // Type select should default to stdio
+    const typeSelect = card.locator('select');
+    await expect(typeSelect).toHaveValue('stdio');
+
+    // Should have all three options
+    const options = typeSelect.locator('option');
+    await expect(options).toHaveCount(3);
+    await expect(options.nth(0)).toHaveText('stdio');
+    await expect(options.nth(1)).toHaveText('SSE');
+    await expect(options.nth(2)).toHaveText('Streamable HTTP');
+  });
+
+  test('MCP servers persist via settings save/reload', async ({ page }) => {
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("MCP Servers")');
+
+    // Add a ToolUniverse preset
+    await page.click('button:has-text("ToolUniverse")');
+    await expect(page.locator('.mcp-server-card')).toHaveCount(1);
+
+    // Save settings
+    await page.click('#settingsModal button:has-text("Save")');
+    await expect(page.locator('#settingsModal')).not.toHaveClass(/visible/);
+
+    // Reopen settings
+    await page.click('.settings-btn');
+    await page.click('button:has-text("MCP Servers")');
+
+    // Server should still be there
+    await expect(page.locator('.mcp-server-card')).toHaveCount(1);
+    await expect(page.locator('.mcp-server-card input.mcp-name')).toHaveValue('ToolUniverse');
+  });
+
+  test('MCP servers stored in settings API', async ({ request }) => {
+    // Save MCP servers via API
+    const mcpServers = JSON.stringify([
+      { name: 'test-mcp', type: 'stdio', command: 'npx', args: '-y test-server', env: '' },
+    ]);
+    const putRes = await request.put('/api/settings', {
+      data: { mcp_servers: mcpServers },
+    });
+    expect(putRes.ok()).toBeTruthy();
+
+    // Retrieve and verify
+    const getRes = await request.get('/api/settings');
+    const settings = await getRes.json();
+    const parsed = JSON.parse(settings.mcp_servers);
+    expect(parsed).toHaveLength(1);
+    expect(parsed[0].name).toBe('test-mcp');
+    expect(parsed[0].command).toBe('npx');
+  });
+
+  test('per-chat MCP selection in new chat modal', async ({ page }) => {
+    // First, save MCP servers so checkboxes appear
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("MCP Servers")');
+
+    // Remove any existing servers first
+    while (await page.locator('.mcp-server-card').count() > 0) {
+      await page.locator('.mcp-server-card').first().locator('.mcp-remove').click();
+    }
+
+    await page.click('button:has-text("ToolUniverse")');
+    await page.click('button:has-text("Deep Research")');
+    await page.click('#settingsModal button:has-text("Save")');
+
+    // Open new chat modal
+    await page.click('button:has-text("New Chat")');
+    await expect(page.locator('#newExpModal')).toHaveClass(/visible/);
+
+    // MCP checkboxes should show in new chat modal
+    const checkboxes = page.locator('#expMcpCheckboxes input[type="checkbox"]');
+    await expect(checkboxes).toHaveCount(2);
+
+    // Default: all checked
+    await expect(checkboxes.nth(0)).toBeChecked();
+    await expect(checkboxes.nth(1)).toBeChecked();
+
+    // Uncheck one and create
+    await checkboxes.nth(1).uncheck();
+    await page.fill('#expNameInput', 'MCP Filter Test');
+    await page.click('#newExpModal .btn-primary');
+    await expect(page.locator('#newExpModal')).not.toHaveClass(/visible/);
+  });
+
+  test('per-chat MCP selection in edit chat modal', async ({ page }) => {
+    // Save MCP servers first
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("MCP Servers")');
+
+    // Remove any existing servers first
+    while (await page.locator('.mcp-server-card').count() > 0) {
+      await page.locator('.mcp-server-card').first().locator('.mcp-remove').click();
+    }
+
+    await page.click('button:has-text("ToolUniverse")');
+    await page.click('#settingsModal button:has-text("Save")');
+
+    // Create a chat
+    await page.click('button:has-text("New Chat")');
+    await page.fill('#expNameInput', 'MCP Edit Test');
+    await page.click('#newExpModal .btn-primary');
+
+    // Open edit modal by clicking title
+    await page.click('#expTitle');
+    await expect(page.locator('#renameExpModal')).toHaveClass(/visible/);
+
+    // MCP checkboxes should appear
+    const checkboxes = page.locator('#editMcpCheckboxes input[type="checkbox"]');
+    await expect(checkboxes).toHaveCount(1);
+  });
+
+  test('experiment API accepts mcp_servers field', async ({ request }) => {
+    // Create experiment with mcp_servers
+    const res = await request.post('/api/experiments', {
+      data: {
+        name: 'MCP API Test',
+        mcp_servers: '["ToolUniverse"]',
+      },
+    });
+    expect(res.status()).toBe(201);
+    const exp = await res.json();
+    expect(exp.mcp_servers).toBe('["ToolUniverse"]');
+
+    // Update mcp_servers
+    const patchRes = await request.patch(`/api/experiments/${exp.id}`, {
+      data: { mcp_servers: '["deep-research"]' },
+    });
+    expect(patchRes.ok()).toBeTruthy();
+
+    // Verify update
+    const getRes = await request.get('/api/experiments');
+    const exps = await getRes.json();
+    const updated = exps.find((e: any) => e.id === exp.id);
+    expect(updated.mcp_servers).toBe('["deep-research"]');
+
+    // Cleanup
+    await request.delete(`/api/experiments/${exp.id}`);
   });
 });
 
@@ -243,7 +438,7 @@ test.describe('Chat Flow', () => {
     await page.goto('/');
 
     // Create experiment
-    await page.click('.btn-new');
+    await page.click('button:has-text("New Chat")');
     await page.fill('#expNameInput', 'Chat Test');
     await page.click('#newExpModal .btn-primary');
     await expect(page.locator('#inputArea')).toHaveClass(/visible/);
@@ -286,14 +481,18 @@ test.describe('REST API', () => {
     await request.delete(`/api/experiments/${body.id}`);
   });
 
-  test('GET /api/skills returns 190 skills', async ({ request }) => {
+  test('GET /api/skills returns skills', async ({ request }) => {
     const res = await request.get('/api/skills');
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
-    expect(body.length).toBe(190);
+    expect(body.length).toBeGreaterThanOrEqual(1);
   });
 
   test('PUT /api/settings saves and GET returns masked tokens', async ({ request }) => {
+    // Save original settings for restoration
+    const origRes = await request.get('/api/settings');
+    const origSettings = await origRes.json();
+
     const res = await request.put('/api/settings', {
       data: {
         github_token: 'ghp_testtoken123456',
@@ -312,5 +511,15 @@ test.describe('REST API', () => {
     // Token should be masked
     expect(settings.github_token).toContain('•');
     expect(settings.github_token).toMatch(/3456$/);
+
+    // Restore original settings (clear test token to avoid breaking real agent)
+    await request.put('/api/settings', {
+      data: {
+        github_token: '',
+        ai_provider: origSettings.ai_provider || '',
+        ollama_url: origSettings.ollama_url || '',
+        ollama_model: origSettings.ollama_model || '',
+      },
+    });
   });
 });

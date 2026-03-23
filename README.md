@@ -19,24 +19,37 @@ CoreClaw is derived from [SciClaw](https://github.com/nahisaho/sciclaw) with SAT
 
 ## Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Docker
+- GitHub Copilot license (Individual, Business, or Enterprise)
 - GitHub Token (for Copilot CLI authentication)
 
 ## Quick Start
 
 ```bash
+# Clone the repository
+git clone https://github.com/nahisaho/coreclaw.git
+cd coreclaw
+
 # Install dependencies
 npm install
 
 # Copy and configure environment
 cp .env.example .env
 # Edit .env and set GITHUB_TOKEN
+# You can use the gh CLI to get your token:
+#   echo "GITHUB_TOKEN=$(gh auth token)" > .env
 
 # Build the agent container
 ./container/build.sh
 
 # Start the server
+npm run build && npm start
+
+# Start with custom ports (e.g. if port 3000 is already in use)
+CORECLAW_WEB_PORT=3050 CREDENTIAL_PROXY_PORT=3051 npm start
+
+# Development mode (auto-reload with tsx)
 npm run dev
 ```
 

@@ -519,7 +519,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         const uploadDir = getUploadDir(expId);
 
         for (const file of files) {
-          const safeName = file.filename.replace(/[^a-zA-Z0-9._-]/g, '_');
+          // Sanitize: keep Unicode letters/digits, strip path separators and control chars
+          const baseName = path.basename(file.filename);
+          const safeName = baseName
+            .replace(/[\/\\:*?"<>|\x00-\x1f]/g, '_')  // strip dangerous chars
+            .replace(/^\.+/, '_')                        // prevent hidden files
+            || 'upload';
           const filePath = path.join(uploadDir, safeName);
           fs.writeFileSync(filePath, file.data);
           uploaded.push(safeName);
