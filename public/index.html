@@ -1338,6 +1338,10 @@ function connectWs() {
 
   ws.onopen = () => {
     console.log('WebSocket connected');
+    // Re-subscribe to current experiment if one is selected
+    if (currentExpId) {
+      ws.send(JSON.stringify({ type: 'subscribe', experimentId: currentExpId }));
+    }
     // Request active tasks to restore state after reload
     ws.send(JSON.stringify({ type: 'list_tasks' }));
   };
@@ -1532,6 +1536,14 @@ async function selectExperiment(id) {
   activeTasks = {};
 
   currentExpId = id;
+
+  // Notify server which experiment this client is now viewing so it only
+  // sends relevant broadcasts (server-side subscription model).
+  if (ws && ws.readyState === WebSocket.OPEN) {
+    ws.send(JSON.stringify({ type: 'subscribe', experimentId: id }));
+    ws.send(JSON.stringify({ type: 'list_tasks' }));
+  }
+
   const exp = experiments.find(e => e.id === id);
   if (!exp) return;
 
@@ -1542,6 +1554,7 @@ async function selectExperiment(id) {
   document.getElementById('expTitle').textContent = exp.name;
   updateChatSkillBadge();
   renderExperimentList();
+  renderTasksBar();
 
   // Refresh artifact cache before rendering messages
   await refreshArtifactCache();

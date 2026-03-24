@@ -1053,12 +1053,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 // WebSocket: streaming agent responses
 // ---------------------------------------------------------------------------
 
-const activeClients = new Set<WebSocket>();
+// Map from WebSocket client to the experimentId it is currently viewing.
+// Only clients subscribed to a given experiment receive its broadcasts.
+const clientSubscriptions = new Map<WebSocket, string>();
 
 function broadcastToExperiment(experimentId: string, data: unknown): void {
   const msg = JSON.stringify({ experimentId, ...data as Record<string, unknown> });
-  for (const ws of activeClients) {
-    if (ws.readyState === WebSocket.OPEN) {
+  for (const [ws, subId] of clientSubscriptions) {
+    if (subId === experimentId && ws.readyState === WebSocket.OPEN) {
       ws.send(msg);
     }
   }
@@ -1067,7 +1069,7 @@ function broadcastToExperiment(experimentId: string, data: unknown): void {
 function broadcastTasks(): void {
   const tasks = Array.from(activeTasks.values());
   const msg = JSON.stringify({ type: 'tasks', tasks });
-  for (const ws of activeClients) {
+  for (const [ws] of clientSubscriptions) {
     if (ws.readyState === WebSocket.OPEN) {
       ws.send(msg);
     }
@@ -1201,6 +1203,11 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
         broadcastTasks();
         setTimeout(() => activeTasks.delete(data.taskId), 60000);
       }
+    }
+
+    // Subscribe to an experiment (client switched to this group)
+    if (data.type === 'subscribe' && data.experimentId) {
+      clientSubscriptions.set(ws, data.experimentId as string);
     }
 
     // List active tasks
@@ -1407,12 +1414,13 @@ export function startWebServer(port = WEB_PORT): Promise<void> {
     const wss = new WebSocketServer({ server });
 
     wss.on('connection', (ws) => {
-      activeClients.add(ws);
+      // Initialize with empty subscription; client sends 'subscribe' when it selects a group
+      clientSubscriptions.set(ws, '');
       logger.debug('WebSocket client connected');
 
       ws.on('message', (raw) => handleWsMessage(ws, raw.toString()));
       ws.on('close', () => {
-        activeClients.delete(ws);
+        clientSubscriptions.delete(ws);
         logger.debug('WebSocket client disconnected');
       });
     });
