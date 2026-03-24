@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.19] - 2026-03-24
+
+### Fixed
+
+- **Artifact viewer width still not taking effect (CSS specificity)** — `.artifact-viewer` was defined at line 831, before the base `.modal { max-width: 500px }` rule at line 997. Because both are single-class selectors with equal specificity, the later rule always won regardless of the `max-width: none` addition in v0.1.18. Fixed by changing the selector to `.modal.artifact-viewer` (two-class selector, higher specificity than `.modal` alone), ensuring the 90 vw width is applied unconditionally.
+
+---
+
 ## [0.1.18] - 2026-03-24
 
 ### Fixed
