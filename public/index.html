@@ -1350,6 +1350,12 @@ function connectWs() {
     // Global task list updates
     if (data.type === 'tasks') {
       activeTaskList = data.tasks;
+      // Restore activeTasks entries for running tasks in the current group
+      for (const task of data.tasks) {
+        if (task.status === 'running' && task.experimentId === currentExpId && !activeTasks[task.id]) {
+          activeTasks[task.id] = { streamBuffer: task.streamingText || '' };
+        }
+      }
       renderTasksBar();
       return;
     }
@@ -1519,6 +1525,12 @@ document.addEventListener('keydown', (e) => {
 });
 
 async function selectExperiment(id) {
+  // Clear streaming state from previous group before switching
+  for (const taskId of Object.keys(activeTasks)) {
+    removeStreamingMessage(taskId);
+  }
+  activeTasks = {};
+
   currentExpId = id;
   const exp = experiments.find(e => e.id === id);
   if (!exp) return;
