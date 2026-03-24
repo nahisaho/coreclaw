@@ -198,6 +198,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **v0.1.20** | 2026-03-24 | Chat内リンクからもアーティファクトビューアをポップアップ表示 |
 | **v0.1.19** | 2026-03-24 | Fix: artifact viewer width (CSS specificity — `.modal.artifact-viewer` selector) |
 | **v0.1.18** | 2026-03-24 | Fix: artifact viewer width now correctly 90% — override `.modal` max-width |
 | **v0.1.17** | 2026-03-24 | Artifact viewer: full 90% viewport width + zoom in/out (－/＋) buttons |

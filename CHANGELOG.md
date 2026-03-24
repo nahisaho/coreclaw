@@ -6,6 +6,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.20] - 2026-03-24
+
+### Changed
+
+- **Chat 内リンクからもアーティファクトビューアーをポップアップ表示** — チャットメッセージ内のアーティファクトファイル名リンク（`linkifyArtifacts`）および Markdownリンク（`` `[text](file.md)` `` 形式）の両方が、新しいタブではなく同一画面のインラインビューアーポップアップで開くようになりました。
+  - 各リンクは `data-artifact` 属性と `chat-artifact-link` クラスで生成され、デリゲートコクリックハンドラーが `viewArtifact()` を呼び出します。
+  - `renderer.link`（チャット用 marked.js renderer）の `href` を `cachedArtifacts` と照合してアーティファクトの場合はポップアップ、外部 URL の場合は引き緜き `target="_blank"` で開きます。
+  - `linkifyArtifacts` 内の `fileMap` を URL ではなくアーティファクトパスを格納するように変更。
+
+---
+
 ## [0.1.19] - 2026-03-24
 
 ### Fixed

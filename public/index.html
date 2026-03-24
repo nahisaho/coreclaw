@@ -2568,6 +2568,12 @@ document.addEventListener('keydown', (e) => {
 const renderer = new marked.Renderer();
 renderer.link = function({ href, title, text }) {
   const titleAttr = title ? ` title="${title}"` : '';
+  if (href && cachedArtifacts.length > 0) {
+    const matched = cachedArtifacts.find(a => a === href || a.split('/').pop() === href);
+    if (matched) {
+      return `<a href="#"${titleAttr} data-artifact="${esc(matched)}" class="artifact-link chat-artifact-link">${text}</a>`;
+    }
+  }
   return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${text}</a>`;
 };
 
@@ -2594,18 +2600,13 @@ async function refreshArtifactCache() {
 function linkifyArtifacts(html) {
   if (!currentExpId || cachedArtifacts.length === 0) return html;
 
-  // Build lookup: filename -> viewer/raw URL
+  // Build lookup: filename -> artifact path (for viewArtifact popup)
   const fileMap = {};
   for (const artifact of cachedArtifacts) {
     const filename = artifact.split('/').pop();
-    const rawUrl = `/api/experiments/${currentExpId}/artifacts/${artifact}`;
-    const ext = filename.includes('.') ? filename.split('.').pop().toLowerCase() : '';
-    const useViewer = ['md', 'mmd', 'mermaid'].includes(ext);
-    fileMap[filename] = useViewer
-      ? `/viewer?url=${encodeURIComponent(rawUrl)}&name=${encodeURIComponent(filename)}`
-      : rawUrl;
+    fileMap[filename] = artifact;
     // Also map /workspace/group/... paths
-    fileMap[`/workspace/group/${artifact}`] = fileMap[filename];
+    fileMap[`/workspace/group/${artifact}`] = artifact;
   }
 
   // Split HTML into tags and text segments, only linkify text segments
@@ -2624,10 +2625,10 @@ function linkifyArtifacts(html) {
 
     // Replace known filenames/paths in text segments
     let replaced = part;
-    for (const [pattern, url] of Object.entries(fileMap)) {
+    for (const [pattern, artifactPath] of Object.entries(fileMap)) {
       const escaped = escapeRegExp(pattern);
       replaced = replaced.replace(new RegExp(escaped, 'g'), (match) =>
-        `<a href="${url}" target="_blank" rel="noopener noreferrer" class="artifact-link">${match}</a>`
+        `<a href="#" data-artifact="${esc(artifactPath)}" class="artifact-link chat-artifact-link">${match}</a>`
       );
     }
     parts[i] = replaced;
@@ -3509,6 +3510,16 @@ async function clearMemoryData() {
 }
 
 // ===== Init =====
+// ===== Chat artifact link — delegated click handler =====
+document.addEventListener('click', function(e) {
+  const link = e.target.closest('.chat-artifact-link');
+  if (link) {
+    e.preventDefault();
+    const artifact = link.dataset.artifact;
+    if (artifact) viewArtifact(artifact);
+  }
+});
+
 async function init() {
   if (typeof mermaid !== 'undefined') {
     mermaid.initialize({
