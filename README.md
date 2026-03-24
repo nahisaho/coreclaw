@@ -190,6 +190,22 @@ Detailed instructions for the agent...
 | `MAX_CONCURRENT_CONTAINERS` | `5` | Max parallel agents |
 | `LOG_LEVEL` | `info` | Log level |
 
+## Changelog
+
+See [CHANGELOG.md](CHANGELOG.md) for the full version history.
+
+### Recent highlights
+
+| Version | Date | Summary |
+|---------|------|---------|
+| **v0.1.15** | 2026-03-24 | Fix: background agent output disappears — summariser container stole `_close` IPC sentinel from next main-agent run |
+| **v0.1.14** | 2026-03-24 | Scientist skill: figures saved to `figures/` are now embedded as `![Caption](figures/file.png)` links in `report.md` |
+| **v0.1.13** | 2026-03-24 | Fix: auto-restart `EADDRINUSE` — graceful HTTP port release + `npm run build` added to update flow |
+| **v0.1.11** | 2026-03-24 | Per-group conversation memory with auto-summarization (rolling DB summary, UI badge, manual compress) |
+| **v0.1.10** | 2026-03-24 | Auto-restart on update; port numbers inherited by restarted process |
+| **v0.1.9** | 2026-03-24 | Fix: cross-group streaming leaks via server-side subscription model |
+| **v0.1.8** | 2026-03-24 | Fix: streaming messages leaking across chat groups (client-side) |
+
 ## License
 
 MIT
