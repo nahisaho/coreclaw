@@ -31,21 +31,25 @@ CoreClaw is derived from [SciClaw](https://github.com/nahisaho/sciclaw) with SAT
 git clone https://github.com/nahisaho/coreclaw.git
 cd coreclaw
 
-# Install dependencies
-npm install
-
-# Copy and configure environment
-cp .env.example .env
-# Edit .env and set GITHUB_TOKEN
-# You can use the gh CLI to get your token:
-#   echo "GITHUB_TOKEN=$(gh auth token)" > .env
-
-# Build the agent container
-./container/build.sh
+# One-step setup (npm install + .env + build + Docker image)
+bash setup.sh
 
 # Start the server
-npm run build && npm start
+npm start
+```
 
+> **手動セットアップする場合:**
+> ```bash
+> npm install
+> cp .env.example .env
+> # .env の GITHUB_TOKEN を設定（gh CLI 使用時は自動取得可）
+> # echo "GITHUB_TOKEN=$(gh auth token)" > .env
+> npm run build
+> ./container/build.sh
+> npm start
+> ```
+
+```bash
 # Start with custom ports (e.g. if port 3000 is already in use)
 CORECLAW_WEB_PORT=3050 CREDENTIAL_PROXY_PORT=3051 npm start
 
@@ -198,7 +202,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
 | Version | Date | Summary |
 |---------|------|---------|
-| **v0.1.23** | 2026-03-25 | Fix: init()宣言欠落、ズームボタン逆転、streaming:trueフラグによるチャット非表示を修正 |
+| **v0.1.23** | 2026-03-25 | Fix: init()宣言欠落・ズームボタン逆転・チャット非表示を修正、`setup.sh` 追加 |
 | **v0.1.22** | 2026-03-24 | コードブロックCopy/折りたたみ、メッセージ検索、アーカイブ機能、設定Export/Import 他 |
 | **v0.1.21** | 2026-03-24 | アーティファクトビューア横幅 95vw に変更 |
 | **v0.1.20** | 2026-03-24 | Chat内リンクからもアーティファクトビューアをポップアップ表示 |

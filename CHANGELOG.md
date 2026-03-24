@@ -16,6 +16,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - `src/experiments.ts` — `updateMessageContent()` でコンテンツ更新時に `metadata = NULL` も同時に設定し、完了後に `streaming:true` フラグが残らないようにした。
   - `public/index.html` — スキップ条件を `meta.streaming && !msg.content`（content が空の場合のみ）に変更し、既存 DB に残っている `streaming:true` 付き完了済みメッセージも正しく表示されるようにした。
 
+### Added
+
+- **`setup.sh`** — `npm install` / `.env` 生成 / `npm run build` / `./container/build.sh` をまとめたワンステップセットアップスクリプトを追加。`gh auth token` が利用可能な場合は GitHub Token を自動取得して `.env` に設定。
+
 ---
 
 ## [0.1.22] - 2026-03-24
