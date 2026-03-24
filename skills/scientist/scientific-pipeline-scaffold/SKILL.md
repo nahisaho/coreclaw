@@ -69,7 +69,7 @@ for d in [DATA_DIR, FIG_DIR, RESULTS_DIR]:
 # === 出版品質スタイル ===
 plt.rcParams.update({
     "font.family": "sans-serif",
-    "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+    "font.sans-serif": ["Noto Sans CJK JP", "IPAGothic", "Arial", "Helvetica", "DejaVu Sans"],
     "font.size": 10,
     "axes.titlesize": 12,
     "axes.labelsize": 11,

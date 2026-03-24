@@ -37,7 +37,7 @@ def setup_publication_style():
     plt.rcParams.update({
         # フォント
         "font.family": "sans-serif",
-        "font.sans-serif": ["Arial", "Helvetica", "DejaVu Sans"],
+        "font.sans-serif": ["Noto Sans CJK JP", "IPAGothic", "Arial", "Helvetica", "DejaVu Sans"],
         "font.size": 10,
         "axes.titlesize": 12,
         "axes.labelsize": 11,
