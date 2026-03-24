@@ -38,11 +38,11 @@ bash setup.sh
 npm start
 ```
 
-> **手動セットアップする場合:**
+> **Manual setup (without `setup.sh`):**
 > ```bash
 > npm install
 > cp .env.example .env
-> # .env の GITHUB_TOKEN を設定（gh CLI 使用時は自動取得可）
+> # Set GITHUB_TOKEN in .env (auto-retrieved via gh CLI if available)
 > # echo "GITHUB_TOKEN=$(gh auth token)" > .env
 > npm run build
 > ./container/build.sh
@@ -202,10 +202,10 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
 | Version | Date | Summary |
 |---------|------|---------|
-| **v0.1.23** | 2026-03-25 | Fix: init()宣言欠落・ズームボタン逆転・チャット非表示を修正、`setup.sh` 追加 |
-| **v0.1.22** | 2026-03-24 | コードブロックCopy/折りたたみ、メッセージ検索、アーカイブ機能、設定Export/Import 他 |
-| **v0.1.21** | 2026-03-24 | アーティファクトビューア横幅 95vw に変更 |
-| **v0.1.20** | 2026-03-24 | Chat内リンクからもアーティファクトビューアをポップアップ表示 |
+| **v0.1.23** | 2026-03-25 | Fix: missing `init()` declaration, zoom button direction, chat output invisible; add `setup.sh` |
+| **v0.1.22** | 2026-03-24 | Code block Copy/collapse, message search, archive, settings Export/Import, and more |
+| **v0.1.21** | 2026-03-24 | Artifact viewer width changed from 90vw to 95vw |
+| **v0.1.20** | 2026-03-24 | Artifact viewer popup from chat inline links |
 | **v0.1.19** | 2026-03-24 | Fix: artifact viewer width (CSS specificity — `.modal.artifact-viewer` selector) |
 | **v0.1.18** | 2026-03-24 | Fix: artifact viewer width now correctly 90% — override `.modal` max-width |
 | **v0.1.17** | 2026-03-24 | Artifact viewer: full 90% viewport width + zoom in/out (－/＋) buttons |
