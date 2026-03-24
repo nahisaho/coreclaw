@@ -35,7 +35,7 @@ cd coreclaw
 bash setup.sh
 
 # Start the server
-npm start
+bash start.sh
 ```
 
 > **Manual setup (without `setup.sh`):**
@@ -52,6 +52,7 @@ npm start
 ```bash
 # Start with custom ports (e.g. if port 3000 is already in use)
 CORECLAW_WEB_PORT=3050 CREDENTIAL_PROXY_PORT=3051 npm start
+# (start.sh uses port 3000 / 3051 by default)
 
 # Development mode (auto-reload with tsx)
 npm run dev
@@ -202,6 +203,7 @@ See [CHANGELOG.md](CHANGELOG.md) for the full version history.
 
 | Version | Date | Summary |
 |---------|------|---------|
+| **v0.1.24** | 2026-03-25 | Add `start.sh` (launches server with default ports `3000`/`3051`) |
 | **v0.1.23** | 2026-03-25 | Fix: missing `init()` declaration, zoom button direction, chat output invisible; add `setup.sh` |
 | **v0.1.22** | 2026-03-24 | Code block Copy/collapse, message search, archive, settings Export/Import, and more |
 | **v0.1.21** | 2026-03-24 | Artifact viewer width changed from 90vw to 95vw |

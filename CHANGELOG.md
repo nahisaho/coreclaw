@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.24] - 2026-03-25
+
+### Added
+
+- **`start.sh`** — Added a convenience start script that launches the server with default port settings (`CORECLAW_WEB_PORT=3000 CREDENTIAL_PROXY_PORT=3051 npm start`).
+
+---
+
 ## [0.1.23] - 2026-03-25
 
 ### Fixed
