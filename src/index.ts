@@ -54,7 +54,7 @@ import {
   shouldDropMessage,
 } from './sender-allowlist.js';
 import { startSchedulerLoop } from './task-scheduler.js';
-import { startWebServer, setAgentRunner, setAgentStopper, WEB_PORT } from './web-server.js';
+import { startWebServer, setAgentRunner, setAgentStopper, setMemorySummarizer, WEB_PORT } from './web-server.js';
 import {
   addMessage as addExperimentMessage,
   getArtifactsDir,
@@ -528,6 +528,53 @@ async function main(): Promise<void> {
       fs.writeFileSync(sentinelPath, '');
       logger.info({ experimentId }, 'Agent stop requested');
     } catch { /* ignore */ }
+  });
+
+  // Memory summariser: runs a lightweight container to compress conversation history
+  setMemorySummarizer((experimentId, summarizationPrompt, onDone, onError) => {
+    const groupFolder = `experiment-${experimentId}`;
+    const tempGroup: RegisteredGroup = {
+      name: `Memory Summarizer ${experimentId}`,
+      folder: groupFolder,
+      trigger: '@agent',
+      added_at: new Date().toISOString(),
+      isMain: false,
+      requiresTrigger: false,
+    };
+
+    let collectedText = '';
+    runContainerAgent(
+      tempGroup,
+      {
+        prompt: summarizationPrompt,
+        groupFolder,
+        chatJid: `memory-${experimentId}`,
+        isMain: false,
+        assistantName: ASSISTANT_NAME,
+      },
+      () => {},
+      async (output) => {
+        if (output.result) {
+          const text = output.result.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim();
+          if (text) collectedText += (collectedText ? '\n' : '') + text;
+        }
+      },
+    )
+      .then((result) => {
+        if (result.status === 'error') {
+          onError(result.error || 'Summarisation container failed');
+          return;
+        }
+        const summary =
+          collectedText ||
+          (result.result ? result.result.replace(/<internal>[\s\S]*?<\/internal>/g, '').trim() : '');
+        if (summary) {
+          onDone(summary);
+        } else {
+          onError('Summarisation returned empty response');
+        }
+      })
+      .catch((err) => onError(err instanceof Error ? err.message : String(err)));
   });
 
   await startWebServer(WEB_PORT);

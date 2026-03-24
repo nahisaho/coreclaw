@@ -20,6 +20,8 @@ import {
   addMessage,
   getMessages,
   getMessageCount,
+  getRecentMessages,
+  getMessagesFromOffset,
   updateMessageContent,
   deleteMessage,
   listArtifacts,
@@ -27,6 +29,15 @@ import {
   saveArtifact,
   resolveArtifactPath,
 } from './experiments.js';
+import {
+  getMemory,
+  clearMemory,
+  buildMemoryContext,
+  needsSummarization,
+  buildSummarizationPrompt,
+  setMemorySummary,
+  MEMORY_RECENT_PAIRS,
+} from './memory.js';
 import { getDatabase } from './db.js';
 import { DATA_DIR, GROUPS_DIR } from './config.js';
 import { listAvailableSkills, getSkillMetadata } from './skills-sync.js';
@@ -300,8 +311,20 @@ type AgentRunner = (
 
 type AgentStopper = (experimentId: string, taskId: string) => void;
 
+/**
+ * Callback registered by the orchestrator to run a memory summarisation pass.
+ * Called asynchronously after an agent response when the history is long enough.
+ */
+type MemorySummarizer = (
+  experimentId: string,
+  summarizationPrompt: string,
+  onDone: (summary: string) => void,
+  onError: (error: string) => void,
+) => void;
+
 let agentRunner: AgentRunner | null = null;
 let agentStopper: AgentStopper | null = null;
+let memorySummarizer: MemorySummarizer | null = null;
 
 export function setAgentRunner(runner: AgentRunner): void {
   agentRunner = runner;
@@ -309,6 +332,53 @@ export function setAgentRunner(runner: AgentRunner): void {
 
 export function setAgentStopper(stopper: AgentStopper): void {
   agentStopper = stopper;
+}
+
+export function setMemorySummarizer(summarizer: MemorySummarizer): void {
+  memorySummarizer = summarizer;
+}
+
+// ---------------------------------------------------------------------------
+// Memory summarisation: triggered asynchronously after agent response
+// ---------------------------------------------------------------------------
+
+/** Set of experiment IDs currently being summarised (prevent concurrent runs). */
+const summarizingExperiments = new Set<string>();
+
+function maybeTriggerSummarization(experimentId: string): void {
+  if (summarizingExperiments.has(experimentId)) return;
+  if (!memorySummarizer) return;
+
+  const total = getMessageCount(experimentId);
+  if (!needsSummarization(experimentId, total)) return;
+
+  const memory = getMemory(experimentId);
+  const alreadySummarized = memory?.summarized_count ?? 0;
+  // Leave the most recent MEMORY_RECENT_PAIRS*2 messages unsummarised
+  const keepTail = MEMORY_RECENT_PAIRS * 2;
+  const summarizeUpTo = total - keepTail;
+  if (summarizeUpTo <= alreadySummarized) return;
+
+  const toSummarize = getMessagesFromOffset(experimentId, alreadySummarized, summarizeUpTo - alreadySummarized);
+  if (toSummarize.length === 0) return;
+
+  const prompt = buildSummarizationPrompt(toSummarize, memory?.summary ?? '');
+  summarizingExperiments.add(experimentId);
+  logger.info({ experimentId, messageCount: toSummarize.length }, 'Starting memory summarisation');
+
+  memorySummarizer(
+    experimentId,
+    prompt,
+    (summary) => {
+      setMemorySummary(experimentId, summary, summarizeUpTo);
+      summarizingExperiments.delete(experimentId);
+      logger.info({ experimentId, summarizeUpTo }, 'Memory summarisation complete');
+    },
+    (err) => {
+      summarizingExperiments.delete(experimentId);
+      logger.warn({ experimentId, err }, 'Memory summarisation failed');
+    },
+  );
 }
 
 // ---------------------------------------------------------------------------
@@ -556,6 +626,75 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   }
 
   // ---- API: Artifacts ----
+
+  // ---- API: Memory ----
+
+  // GET /api/experiments/:id/memory — get current memory state
+  const memoryMatch = pathname.match(/^\/api\/experiments\/([^/]+)\/memory$/);
+  if (method === 'GET' && memoryMatch) {
+    const expId = memoryMatch[1];
+    if (!getExperiment(expId)) { sendJson(res, 404, { error: 'Not found' }); return; }
+    const memory = getMemory(expId);
+    const total = getMessageCount(expId);
+    sendJson(res, 200, {
+      memory: memory ?? { experiment_id: expId, summary: '', summarized_count: 0 },
+      total_messages: total,
+      is_summarizing: summarizingExperiments.has(expId),
+    });
+    return;
+  }
+
+  // DELETE /api/experiments/:id/memory — clear memory summary
+  if (method === 'DELETE' && memoryMatch) {
+    const expId = memoryMatch[1];
+    if (!getExperiment(expId)) { sendJson(res, 404, { error: 'Not found' }); return; }
+    clearMemory(expId);
+    sendJson(res, 200, { ok: true });
+    return;
+  }
+
+  // POST /api/experiments/:id/memory/summarize — manually trigger summarisation
+  const memSumMatch = pathname.match(/^\/api\/experiments\/([^/]+)\/memory\/summarize$/);
+  if (method === 'POST' && memSumMatch) {
+    const expId = memSumMatch[1];
+    if (!getExperiment(expId)) { sendJson(res, 404, { error: 'Not found' }); return; }
+    if (summarizingExperiments.has(expId)) {
+      sendJson(res, 409, { error: 'Summarisation already in progress' });
+      return;
+    }
+    if (!memorySummarizer) {
+      sendJson(res, 503, { error: 'Summariser not configured' });
+      return;
+    }
+    const total = getMessageCount(expId);
+    const memory = getMemory(expId);
+    const alreadySummarized = memory?.summarized_count ?? 0;
+    const toSummarize = getMessagesFromOffset(expId, alreadySummarized, total - alreadySummarized);
+    if (toSummarize.length === 0) {
+      sendJson(res, 200, { ok: true, message: 'Nothing to summarise' });
+      return;
+    }
+    const prompt = buildSummarizationPrompt(toSummarize, memory?.summary ?? '');
+    summarizingExperiments.add(expId);
+    memorySummarizer(
+      expId,
+      prompt,
+      (summary) => {
+        setMemorySummary(expId, summary, total);
+        summarizingExperiments.delete(expId);
+        broadcastToExperiment(expId, {
+          type: 'memory_update',
+          memory: getMemory(expId),
+        });
+      },
+      (err) => {
+        summarizingExperiments.delete(expId);
+        logger.warn({ expId, err }, 'Manual summarisation failed');
+      },
+    );
+    sendJson(res, 202, { ok: true, message: 'Summarisation started' });
+    return;
+  }
 
   // GET /api/experiments/:id/artifacts
   const artMatch = pathname.match(/^\/api\/experiments\/([^/]+)\/artifacts$/);
@@ -1096,6 +1235,13 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
         message: userMsg,
       });
 
+      // Build memory context from recent history (excludes the current user message)
+      const recentHistory = getRecentMessages(data.experimentId, MEMORY_RECENT_PAIRS * 2 + 2);
+      // Remove the last entry if it is the message we just saved (same id)
+      const historyForContext = recentHistory.filter(m => m.id !== userMsg.id);
+      const memoryCtx = buildMemoryContext(data.experimentId, historyForContext);
+      const augmentedPrompt = memoryCtx ? memoryCtx + data.content : data.content;
+
       // Create task for parallel tracking
       const taskId = generateTaskId();
       const task: ActiveTask = {
@@ -1115,7 +1261,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
       if (agentRunner) {
         agentRunner(
           data.experimentId,
-          data.content,
+          augmentedPrompt,
           (chunk: string) => {
             if (task.status === 'cancelled') return;
             task.streamingText += chunk;
@@ -1149,6 +1295,14 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               message: assistantMsg,
             });
             broadcastTasks();
+            // Notify client of updated memory state
+            const updatedMemory = getMemory(data.experimentId);
+            broadcastToExperiment(data.experimentId, {
+              type: 'memory_update',
+              memory: updatedMemory ?? { experiment_id: data.experimentId, summary: '', summarized_count: 0 },
+            });
+            // Trigger async memory summarisation if threshold reached
+            setTimeout(() => maybeTriggerSummarization(data.experimentId), 100);
             // Clean up after a delay
             setTimeout(() => activeTasks.delete(taskId), 60000);
           },

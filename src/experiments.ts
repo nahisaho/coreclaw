@@ -8,6 +8,7 @@ import crypto from 'crypto';
 
 import { DATA_DIR, GROUPS_DIR } from './config.js';
 import { logger } from './logger.js';
+import { initMemoryDb } from './memory.js';
 
 export interface Experiment {
   id: string;
@@ -96,6 +97,9 @@ export function initExperimentsDb(database: Database.Database): void {
   if (!msgCols.find(c => c.name === 'user_id')) {
     db.exec("ALTER TABLE experiment_messages ADD COLUMN user_id TEXT DEFAULT ''");
   }
+
+  // Initialize memory subsystem (same DB connection)
+  initMemoryDb(database);
 }
 
 // ---------------------------------------------------------------------------
@@ -317,6 +321,44 @@ export function getMessageCount(experimentId: string): number {
     .prepare('SELECT COUNT(*) as count FROM experiment_messages WHERE experiment_id = ?')
     .get(experimentId) as { count: number };
   return row.count;
+}
+
+/**
+ * Return the most recent `limit` messages for an experiment in chronological order.
+ * Useful for building memory context without fetching the entire history.
+ */
+export function getRecentMessages(
+  experimentId: string,
+  limit = 10,
+): ExperimentMessage[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT * FROM experiment_messages
+       WHERE experiment_id = ?
+       ORDER BY timestamp DESC
+       LIMIT ?`,
+    )
+    .all(experimentId, limit) as ExperimentMessage[];
+  return rows.reverse(); // Return in chronological (ascending) order
+}
+
+/**
+ * Return messages by ascending offset after a given row count.
+ * Used to fetch the "unsummarized" messages for the compaction prompt.
+ */
+export function getMessagesFromOffset(
+  experimentId: string,
+  offset: number,
+  limit = 500,
+): ExperimentMessage[] {
+  return getDb()
+    .prepare(
+      `SELECT * FROM experiment_messages
+       WHERE experiment_id = ?
+       ORDER BY timestamp ASC
+       LIMIT ? OFFSET ?`,
+    )
+    .all(experimentId, limit, offset) as ExperimentMessage[];
 }
 
 export function updateMessageContent(msgId: string, content: string): void {
