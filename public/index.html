@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>CoreClaw — AI Research Assistant</title>
 <script src="https://cdn.jsdelivr.net/npm/marked@15/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
 <script>document.documentElement.setAttribute('data-theme', localStorage.getItem('coreclaw-theme') || 'dark');</script>
 <style>
 /* ===== Reset & Variables ===== */
@@ -826,6 +827,97 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .artifact-btn.view-btn:hover { color: var(--accent); border-color: var(--accent); }
 .artifact-btn.dl-btn:hover { color: var(--green); border-color: var(--green); }
 
+/* ===== Artifact Viewer Modal ===== */
+.artifact-viewer {
+  width: 90vw; max-width: 1100px; height: 88vh;
+  display: flex; flex-direction: column;
+  padding: 0; min-width: unset; border-radius: 12px; overflow: hidden;
+}
+.av-header {
+  display: flex; align-items: center; gap: 10px;
+  padding: 11px 16px; border-bottom: 1px solid var(--border);
+  background: var(--bg-tertiary); flex-shrink: 0;
+}
+.av-filename {
+  font-size: 13px; font-weight: 600; flex: 1;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-family: var(--font-mono); color: var(--text-primary);
+}
+.av-badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 12px;
+  background: var(--border); color: var(--text-secondary);
+  text-transform: uppercase; flex-shrink: 0;
+}
+.av-badge.md { background: #1f6feb33; color: var(--accent); }
+.av-badge.json { background: #3fb95033; color: var(--green); }
+.av-badge.py { background: #d2992233; color: var(--orange); }
+.av-badge.img { background: #8957e533; color: #d2a8ff; }
+.av-badge.mermaid { background: #3fb95033; color: var(--green); }
+.av-actions { display: flex; gap: 6px; flex-shrink: 0; align-items: center; }
+.av-btn {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  color: var(--text-secondary); padding: 5px 12px; border-radius: 6px;
+  cursor: pointer; font-size: 12px; transition: all .15s; white-space: nowrap;
+}
+.av-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
+.av-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+.av-body {
+  flex: 1; overflow-y: auto; overflow-x: hidden;
+  background: var(--bg-primary);
+}
+.av-loading { text-align: center; padding: 60px; color: var(--text-muted); font-size: 14px; }
+.av-error { text-align: center; padding: 40px; color: var(--red); font-size: 14px; }
+.av-image {
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: 28px; min-height: 200px;
+}
+.av-image img { max-width: 100%; border-radius: 8px; }
+.av-pdf { width: 100%; height: calc(88vh - 52px); border: none; display: block; }
+.av-content {
+  max-width: 860px; margin: 0 auto; padding: 28px 32px;
+  font-size: 15px; line-height: 1.7; color: var(--text-primary);
+}
+.av-content h1 { font-size: 1.9em; margin: 20px 0 10px; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.av-content h2 { font-size: 1.5em; margin: 18px 0 8px; padding-bottom: 6px; border-bottom: 1px solid var(--border); }
+.av-content h3 { font-size: 1.25em; margin: 14px 0 6px; }
+.av-content h4, .av-content h5 { font-size: 1.05em; margin: 12px 0 4px; }
+.av-content p { margin: 8px 0; }
+.av-content ul, .av-content ol { margin: 8px 0; padding-left: 28px; }
+.av-content li { margin: 4px 0; }
+.av-content blockquote {
+  border-left: 3px solid var(--accent); padding: 8px 16px; margin: 12px 0;
+  color: var(--text-secondary); background: var(--bg-secondary); border-radius: 0 6px 6px 0;
+}
+.av-content pre {
+  background: var(--bg-secondary); border: 1px solid var(--border);
+  border-radius: 8px; padding: 16px; margin: 12px 0; overflow-x: auto;
+  font-family: var(--font-mono); font-size: 13px;
+}
+.av-content code { font-family: var(--font-mono); font-size: 13px; background: var(--bg-secondary); padding: 2px 6px; border-radius: 4px; }
+.av-content pre code { background: none; padding: 0; }
+.av-content table { border-collapse: collapse; margin: 12px 0; width: 100%; }
+.av-content th, .av-content td { border: 1px solid var(--border); padding: 8px 12px; text-align: left; }
+.av-content th { background: var(--bg-tertiary); font-weight: 600; }
+.av-content tr:nth-child(even) { background: var(--bg-tertiary); }
+.av-content hr { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
+.av-content a { color: var(--accent); text-decoration: underline; text-underline-offset: 2px; }
+.av-content a:hover { color: var(--accent-hover); }
+.av-content img { max-width: 100%; border-radius: 8px; margin: 12px 0; display: block; }
+.av-content strong { color: var(--text-primary); font-weight: 600; }
+.av-content em { color: var(--text-secondary); }
+.av-code {
+  font-family: var(--font-mono); font-size: 13px; padding: 24px 28px; line-height: 1.6;
+  white-space: pre; overflow-x: auto; color: var(--text-primary);
+  display: block; min-height: 100%; margin: 0;
+}
+.av-raw {
+  font-family: var(--font-mono); font-size: 13px; padding: 24px 28px; line-height: 1.6;
+  white-space: pre-wrap; word-break: break-word; color: var(--text-secondary);
+  display: block; margin: 0;
+}
+.av-mermaid { display: flex; justify-content: center; padding: 40px 24px; overflow-x: auto; }
+.av-mermaid svg { max-width: 100%; height: auto; }
+
 /* Input area */
 .input-area {
   padding: 16px 20px; border-top: 1px solid var(--border);
@@ -1354,6 +1446,22 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   </div>
 </div>
 
+<!-- ===== Artifact Viewer Modal ===== -->
+<div class="modal-overlay" id="artifactViewerModal" onclick="if(event.target===this)closeModal('artifactViewerModal')">
+  <div class="modal artifact-viewer">
+    <div class="av-header">
+      <span class="av-filename" id="avFilename">Loading...</span>
+      <span class="av-badge" id="avBadge"></span>
+      <div class="av-actions">
+        <button class="av-btn" id="avRawBtn" onclick="avToggleRaw()">Raw</button>
+        <button class="av-btn" onclick="avDownload()">⬇ Download</button>
+        <button class="modal-close" onclick="closeModal('artifactViewerModal')" title="Close (Esc)">✕</button>
+      </div>
+    </div>
+    <div class="av-body" id="avBody"></div>
+  </div>
+</div>
+
 <script>
 // ===== State =====
 let experiments = [];
@@ -1815,18 +1923,15 @@ async function showArtifacts() {
       const icon = getFileIcon(ext);
       const viewable = isViewable(ext);
       const viewUrl = `/api/experiments/${currentExpId}/artifacts/${filepath}`;
-      const useViewer = ['md', 'mmd', 'mermaid'].includes(ext);
-      const openUrl = useViewer
-        ? `/viewer?url=${encodeURIComponent(viewUrl)}&name=${encodeURIComponent(name)}`
-        : viewUrl;
-      return `<div class="artifact-item">
+      const escapedFp = esc(filepath);
+      return `<div class="artifact-item" data-fp="${escapedFp}">
         <span class="artifact-icon">${icon}</span>
         <div class="artifact-info">
           <div class="artifact-name">${esc(name)}</div>
           ${filepath !== name ? `<div class="artifact-path">${esc(filepath)}</div>` : ''}
         </div>
         <div class="artifact-actions">
-          ${viewable ? `<button class="artifact-btn view-btn" onclick="window.open('${openUrl}', '_blank')">👁 View</button>` : ''}
+          ${viewable ? `<button class="artifact-btn view-btn" onclick="viewArtifact(this.closest('[data-fp]').dataset.fp)">👁 View</button>` : ''}
           <button class="artifact-btn dl-btn" onclick="downloadArtifact('${viewUrl}', '${esc(name)}')">⬇ Download</button>
         </div>
       </div>`;
@@ -1902,6 +2007,155 @@ function downloadArtifact(url, filename) {
   a.href = url;
   a.download = filename;
   a.click();
+}
+
+// ===== Artifact Viewer =====
+let avCurrentUrl = null;
+let avCurrentName = null;
+let avCurrentFilepath = null;
+let avRawText = null;
+let avShowingRaw = false;
+let avMermaidCounter = 0;
+
+async function viewArtifact(filepath) {
+  avCurrentFilepath = filepath;
+  const name = filepath.split('/').pop();
+  const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+  const url = `/api/experiments/${currentExpId}/artifacts/${filepath}`;
+
+  avCurrentUrl = url;
+  avCurrentName = name;
+  avRawText = null;
+  avShowingRaw = false;
+
+  // Header: filename + badge
+  document.getElementById('avFilename').textContent = name;
+  const badge = document.getElementById('avBadge');
+  badge.className = 'av-badge';
+  const badgeLabels = {
+    md: 'Markdown', json: 'JSON', yaml: 'YAML', yml: 'YAML',
+    py: 'Python', r: 'R', js: 'JavaScript', ts: 'TypeScript',
+    sh: 'Shell', bash: 'Shell', csv: 'CSV', tsv: 'TSV',
+    txt: 'Text', log: 'Log', html: 'HTML', xml: 'XML', svg: 'SVG',
+    png: 'PNG', jpg: 'JPEG', jpeg: 'JPEG', gif: 'GIF', webp: 'WebP',
+    pdf: 'PDF', mmd: 'Mermaid', mermaid: 'Mermaid',
+  };
+  badge.textContent = badgeLabels[ext] || ext.toUpperCase();
+  if (ext === 'md') badge.classList.add('md');
+  else if (['json', 'yaml', 'yml'].includes(ext)) badge.classList.add('json');
+  else if (['py', 'r', 'js', 'ts', 'sh', 'bash'].includes(ext)) badge.classList.add('py');
+  else if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) badge.classList.add('img');
+  else if (['mmd', 'mermaid'].includes(ext)) badge.classList.add('mermaid');
+
+  // Raw button: hide for images/pdf
+  const noRaw = ['png', 'jpg', 'jpeg', 'gif', 'webp', 'pdf'].includes(ext);
+  const rawBtn = document.getElementById('avRawBtn');
+  rawBtn.style.display = noRaw ? 'none' : '';
+  rawBtn.textContent = 'Raw';
+  rawBtn.classList.remove('active');
+
+  document.getElementById('avBody').innerHTML = '<div class="av-loading">Loading...</div>';
+  document.getElementById('artifactViewerModal').classList.add('visible');
+
+  await avLoadContent();
+}
+
+async function avLoadContent() {
+  const filepath = avCurrentFilepath;
+  const name = avCurrentName;
+  const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
+  const url = avCurrentUrl;
+  const body = document.getElementById('avBody');
+  try {
+    if (['png', 'jpg', 'jpeg', 'gif', 'webp'].includes(ext)) {
+      body.innerHTML = `<div class="av-image"><img src="${url}" alt="${esc(name)}"></div>`;
+      return;
+    }
+    if (ext === 'pdf') {
+      body.innerHTML = `<iframe src="${url}" class="av-pdf"></iframe>`;
+      return;
+    }
+    const res = await fetch(url);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    avRawText = await res.text();
+    avRenderContent();
+  } catch (err) {
+    body.innerHTML = `<div class="av-error">Error loading file: ${esc(err.message)}</div>`;
+  }
+}
+
+function avRenderContent() {
+  const ext = avCurrentName.includes('.') ? avCurrentName.split('.').pop().toLowerCase() : '';
+  if (ext === 'md') {
+    avRenderMarkdown(avRawText, avCurrentFilepath);
+  } else if (ext === 'mmd' || ext === 'mermaid') {
+    avRenderMermaid(avRawText);
+  } else {
+    avRenderCode(avRawText, ext);
+  }
+}
+
+function avRenderMarkdown(text, filepath) {
+  const dir = filepath.includes('/') ? filepath.substring(0, filepath.lastIndexOf('/') + 1) : '';
+  const avRenderer = new marked.Renderer();
+  avRenderer.image = function({ href, title, text: altText }) {
+    let src = href || '';
+    // Rewrite relative image paths to artifact API URLs
+    if (src && !src.startsWith('http') && !src.startsWith('/') && !src.startsWith('data:')) {
+      src = `/api/experiments/${currentExpId}/artifacts/${dir}${src}`;
+    }
+    const titleAttr = title ? ` title="${esc(title)}"` : '';
+    return `<img src="${src}" alt="${esc(altText || '')}"${titleAttr}>`;
+  };
+  avRenderer.link = function({ href, title, text: linkText }) {
+    const titleAttr = title ? ` title="${title}"` : '';
+    return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${linkText}</a>`;
+  };
+  const html = marked.parse(text, { renderer: avRenderer, breaks: true, gfm: true });
+  document.getElementById('avBody').innerHTML = `<div class="av-content">${html}</div>`;
+}
+
+async function avRenderMermaid(text) {
+  const body = document.getElementById('avBody');
+  if (typeof mermaid === 'undefined') {
+    avRenderCode(text, 'mmd');
+    return;
+  }
+  try {
+    const id = `av-mermaid-${++avMermaidCounter}`;
+    const { svg } = await mermaid.render(id, text);
+    body.innerHTML = `<div class="av-mermaid">${svg}</div>`;
+  } catch (err) {
+    body.innerHTML = `<div class="av-error">Mermaid render error: ${esc(err.message)}</div><pre class="av-raw">${esc(text)}</pre>`;
+  }
+}
+
+function avRenderCode(text, ext) {
+  let displayText = text;
+  if (ext === 'json') {
+    try { displayText = JSON.stringify(JSON.parse(text), null, 2); } catch { /* keep original */ }
+  }
+  document.getElementById('avBody').innerHTML = `<pre class="av-code">${esc(displayText)}</pre>`;
+}
+
+function avToggleRaw() {
+  if (!avRawText) return;
+  avShowingRaw = !avShowingRaw;
+  const btn = document.getElementById('avRawBtn');
+  if (avShowingRaw) {
+    document.getElementById('avBody').innerHTML = `<pre class="av-raw">${esc(avRawText)}</pre>`;
+    btn.textContent = 'Rendered';
+    btn.classList.add('active');
+  } else {
+    btn.textContent = 'Raw';
+    btn.classList.remove('active');
+    document.getElementById('avBody').innerHTML = '<div class="av-loading">Rendering...</div>';
+    avRenderContent();
+  }
+}
+
+function avDownload() {
+  if (avCurrentUrl && avCurrentName) downloadArtifact(avCurrentUrl, avCurrentName);
 }
 
 // ===== Messages =====
@@ -3236,6 +3490,17 @@ async function clearMemoryData() {
 
 // ===== Init =====
 async function init() {
+  if (typeof mermaid !== 'undefined') {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: document.documentElement.getAttribute('data-theme') === 'light' ? 'default' : 'dark',
+      themeVariables: {
+        primaryColor: '#1f6feb', primaryTextColor: '#e6edf3',
+        primaryBorderColor: '#30363d', lineColor: '#8b949e',
+        secondaryColor: '#161b22', tertiaryColor: '#21262d',
+      },
+    });
+  }
   connectWs();
   await loadExperiments();
 
