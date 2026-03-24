@@ -1,0 +1,4 @@
+#!/bin/bash
+set -e
+
+CORECLAW_WEB_PORT=3000 CREDENTIAL_PROXY_PORT=3051 npm start

@@ -10,15 +10,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Fixed
 
-- **init() 関数宣言の欠落** — v0.1.22 で Mermaid ポップアップコードを挿入した際に `async function init() {` の宣言行が消えてしまい、Chat Group が表示されずサイドバー開閉も動作しない状態になっていた問題を修正。
-- **アーティファクトビューアのズームイン/アウト方向** — ＋ボタンでズームアウト・ーボタンでズームインされていた方向の逆転バグを修正（＋ → `avZoom(+10)`、ー → `avZoom(-10)`）。
-- **チャットアウトプットが表示されない** — v0.1.22 の「ストリーミング再読み込み耐性」実装で `streaming:true` メタデータを持つ全メッセージをスキップしていたため、完了済みのアシスタントメッセージが一切表示されなくなっていた問題を修正。
-  - `src/experiments.ts` — `updateMessageContent()` でコンテンツ更新時に `metadata = NULL` も同時に設定し、完了後に `streaming:true` フラグが残らないようにした。
-  - `public/index.html` — スキップ条件を `meta.streaming && !msg.content`（content が空の場合のみ）に変更し、既存 DB に残っている `streaming:true` 付き完了済みメッセージも正しく表示されるようにした。
+- **Missing `init()` function declaration** — When inserting the Mermaid popup code in v0.1.22, the `async function init() {` declaration line was accidentally removed, causing Chat Groups to not appear and sidebar open/close to stop working.
+- **Artifact viewer zoom in/out direction** — Fixed a reversed zoom direction bug where the ＋ button zoomed out and the ー button zoomed in (＋ → `avZoom(+10)`, ー → `avZoom(-10)`).
+- **Chat output not visible** — Fixed an issue where the v0.1.22 "streaming reload resilience" implementation skipped all messages with `streaming:true` metadata, causing all completed assistant messages to be invisible.
+  - `src/experiments.ts` — `updateMessageContent()` now also sets `metadata = NULL` when updating content, preventing the `streaming:true` flag from persisting after completion.
+  - `public/index.html` — Changed the skip condition to `meta.streaming && !msg.content` (skip only when content is empty) so completed messages with `streaming:true` remaining in existing DB records are displayed correctly.
 
 ### Added
 
-- **`setup.sh`** — `npm install` / `.env` 生成 / `npm run build` / `./container/build.sh` をまとめたワンステップセットアップスクリプトを追加。`gh auth token` が利用可能な場合は GitHub Token を自動取得して `.env` に設定。
+- **`setup.sh`** — Added a one-step setup script that consolidates `npm install` / `.env` generation / `npm run build` / `./container/build.sh`. Automatically retrieves the GitHub Token via `gh auth token` and writes it to `.env` if available.
 
 ---
 
@@ -26,20 +26,20 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Added
 
-- **コードブロック UI 改善** — チャット内の全コードブロックに言語ラベルヘッダー、**Copy** ボタン、**折りたたみ（▼/▶）** ボタンを追加。
-- **ストリーミングメッセージに Stop ボタン** — エージェント応答中にメッセージ表示内に ⏹ Stop ボタンを直接表示。
-- **ストリーミング再読み込み耐性** — ブラウザリロード後、`list_tasks` レスポンスから實行中のストリーミングテキストを UI に復元表示。またメッセージ読み込み時に `streaming:true` の中途レコードをスキップ。
-- **メッセージ全文検索** — チャットグループ内の過去メッセージを全文検索。ヘッダーの 🔍 Search ボタンから起動、キーワードにマッチする部分をハイライト表示。SQLite `LIKE` クエリ使用。
-- **アーティファクトビューアに Copy ボタン** — ビューアーヘッダーに 📋 Copy ボタンを追加。クリックでファイル内容をクリップボードにコピー。
-- **メモリ要約インジケーター** — Memory モーダルに「次の自動圧縮まで: あと N 件」のプログレスバーを追加。
-- **チャットグループのアーカイブ機能** — サイドバーの 📦 ボタンでアーカイブ/解除。アーカイブ済みアイテムはご灰色・打ち消し線表示。`status = 'archived'` を PATCH API で設定。
-- **Mermaid 図クリックでビューアポップアップ** — チャット内の `mermaid` コードブロックをクリックするとインラインビューアーポップアップでレンダリング。バックエンドAPI不要。
-- **設定のエクスポート/インポート** — Settings モーダルに 📤 Export / 📥 Import ボタンを追加。`settings.json` を JSON ファイルとしてバックアップ/復元。
+- **Code block UI improvements** — Added language label headers, **Copy** buttons, and **collapse (▼/▶)** buttons to all code blocks in chat.
+- **Stop button in streaming messages** — Added a ⏹ Stop button directly inside the message display while the agent is responding.
+- **Streaming reload resilience** — After a browser reload, restores in-progress streaming text to the UI from the `list_tasks` response. Also skips incomplete `streaming:true` records when loading messages.
+- **Full-text message search** — Full-text search across past messages in a chat group. Launched from the 🔍 Search button in the header; matching keywords are highlighted. Uses SQLite `LIKE` query.
+- **Copy button in artifact viewer** — Added a 📋 Copy button to the viewer header. Clicking it copies the file contents to the clipboard.
+- **Memory summary indicator** — Added a progress bar to the Memory modal showing "Until next auto-compaction: N messages remaining".
+- **Chat group archive feature** — Archive/unarchive via the 📦 button in the sidebar. Archived items are displayed in gray with strikethrough. Sets `status = 'archived'` via PATCH API.
+- **Mermaid diagram click to viewer popup** — Clicking a `mermaid` code block in chat renders it in an inline viewer popup. No backend API required.
+- **Settings export/import** — Added 📤 Export / 📥 Import buttons to the Settings modal. Backs up/restores `settings.json` as a JSON file.
 
 ### Changed
 
-- `src/experiments.ts` — `searchMessages()` 関数を追加（SQLite LIKE 検索）。
-- `src/web-server.ts` — `GET /api/experiments/:id/messages/search?q=` エンドポイントを追加。
+- `src/experiments.ts` — Added `searchMessages()` function (SQLite LIKE search).
+- `src/web-server.ts` — Added `GET /api/experiments/:id/messages/search?q=` endpoint.
 
 ---
 
@@ -47,10 +47,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ### Changed
 
-- **Chat 内リンクからもアーティファクトビューアーをポップアップ表示** — チャットメッセージ内のアーティファクトファイル名リンク（`linkifyArtifacts`）および Markdownリンク（`` `[text](file.md)` `` 形式）の両方が、新しいタブではなく同一画面のインラインビューアーポップアップで開くようになりました。
-  - 各リンクは `data-artifact` 属性と `chat-artifact-link` クラスで生成され、デリゲートコクリックハンドラーが `viewArtifact()` を呼び出します。
-  - `renderer.link`（チャット用 marked.js renderer）の `href` を `cachedArtifacts` と照合してアーティファクトの場合はポップアップ、外部 URL の場合は引き緜き `target="_blank"` で開きます。
-  - `linkifyArtifacts` 内の `fileMap` を URL ではなくアーティファクトパスを格納するように変更。
+- **Artifact viewer popup from links in chat** — Both artifact filename links (`linkifyArtifacts`) and Markdown links (`` `[text](file.md)` `` format) in chat messages now open in an inline viewer popup in the same window instead of a new tab.
+  - Each link is generated with a `data-artifact` attribute and `chat-artifact-link` class; a delegate click handler calls `viewArtifact()`.
+  - `renderer.link` (marked.js renderer for chat) compares `href` against `cachedArtifacts`: opens a popup for artifacts, continues to open external URLs with `target="_blank"`.
+  - Changed `fileMap` in `linkifyArtifacts` to store artifact paths instead of URLs.
 
 ---
 
