@@ -56,15 +56,32 @@ for d in [FIG_DIR, RES_DIR, DATA_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # 図は必ずファイルに保存（plt.show() は使わない）
-fig.savefig(FIG_DIR / "figure_01.png", dpi=300, bbox_inches="tight")
+fig_path = FIG_DIR / "figure_01.png"
+fig.savefig(fig_path, dpi=300, bbox_inches="tight")
 plt.close(fig)
+
+# ── レポートへの埋め込みリンクも必ず生成 ──
+# Markdown から参照する相対パスを生成
+fig_rel = fig_path.relative_to(BASE_DIR)   # → figures/figure_01.png
+fig_embed = f"![Figure 1: <キャプション>]({fig_rel})"
 
 # 結果は JSON/CSV で保存
 import json
 with open(RES_DIR / "summary.json", "w", encoding="utf-8") as f:
     json.dump(results, f, ensure_ascii=False, indent=2)
 
-# テキストレポートも保存
+# テキストレポートも保存（図の埋め込みリンクを含める）
+report_content = f"""
+# レポートタイトル
+
+## 結果
+
+### Figure 1: <キャプション>
+
+{fig_embed}
+
+図の説明文をここに記述する。
+"""
 with open(BASE_DIR / "report.md", "w", encoding="utf-8") as f:
     f.write(report_content)
 ```
@@ -77,8 +94,38 @@ with open(BASE_DIR / "report.md", "w", encoding="utf-8") as f:
 2. **目的・背景**
 3. **方法・手順の概要**
 4. **結果の要約**（数値・統計量を含む）
-5. **考察・結論**
-6. **生成ファイル一覧**（figures/, results/ の内容リスト）
+5. **図表の埋め込み**（下記「図表リンクルール」参照）
+6. **考察・結論**
+7. **生成ファイル一覧**（figures/, results/ の内容リスト）
+
+### 図表リンクルール（必須）
+
+生成したグラフ・図表は `report.md` に **Markdown 画像リンクで埋め込む** こと。
+リンクは `figures/` からの**相対パス**を使用する。
+
+```markdown
+## 結果
+
+### Figure 1: 実験条件ごとの発現量分布
+
+![Figure 1: 実験条件ごとの発現量分布](figures/figure_01.png)
+
+上図は条件 A・B・C の発現量を箱ひげ図で比較したものである。
+条件 B で有意に高い発現量が観察された（p < 0.01）。
+
+### Figure 2: 主成分分析（PCA）
+
+![Figure 2: 主成分分析（PCA）](figures/figure_02.png)
+
+PC1 が全分散の 68.3 % を説明し、条件間の明確な分離を示す。
+```
+
+**チェックリスト**
+
+- [ ] 図ファイルを `figures/` に保存した
+- [ ] `report.md` 内の図が参照される位置に `![キャプション](figures/ファイル名)` を挿入した
+- [ ] 図の直後にキャプション・説明文を記述した
+- [ ] `plt.show()` を呼び出していない（ファイル保存のみ）
 
 ---
 
