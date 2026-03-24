@@ -1517,9 +1517,9 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <div class="av-actions">
         <button class="av-btn" id="avRawBtn" onclick="avToggleRaw()">Raw</button>
         <button class="av-btn" id="avCopyBtn" onclick="avCopyContent()" title="内容をコピー">📋 Copy</button>
-        <button class="av-btn" onclick="avZoom(-10)" title="Zoom out">－</button>
+        <button class="av-btn" onclick="avZoom(10)" title="Zoom out">－</button>
         <span class="av-zoom-label" id="avZoomLabel">100%</span>
-        <button class="av-btn" onclick="avZoom(10)" title="Zoom in">＋</button>
+        <button class="av-btn" onclick="avZoom(-10)" title="Zoom in">＋</button>
         <button class="av-btn" onclick="avDownload()">⬇ Download</button>
         <button class="modal-close" onclick="closeModal('artifactViewerModal')" title="Close (Esc)">✕</button>
       </div>
@@ -2177,7 +2177,8 @@ let avZoomLevel = 100;
 
 function avApplyZoom() {
   document.getElementById('avBody').style.zoom = `${avZoomLevel}%`;
-  document.getElementById('avZoomLabel').textContent = `${avZoomLevel}%`;
+  // avZoomLevel is inverse of visual zoom (flex-child CSS zoom quirk), show correct value
+  document.getElementById('avZoomLabel').textContent = `${Math.round(10000 / avZoomLevel)}%`;
 }
 
 function avZoom(delta) {
