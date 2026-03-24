@@ -3806,7 +3806,7 @@ function openMermaidPopup(text) {
   avRenderMermaid(text);
 }
 
-
+async function init() {
   if (typeof mermaid !== 'undefined') {
     mermaid.initialize({
       startOnLoad: false,
