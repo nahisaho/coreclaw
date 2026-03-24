@@ -19,22 +19,27 @@ echo ""
 
 # --- 2. .env の生成 ---
 echo "⚙️  Generating .env..."
-cp .env.example .env
 
-# GitHub token を gh CLI から取得して上書き
-if command -v gh &>/dev/null; then
-  GH_TOKEN="$(gh auth token 2>/dev/null || true)"
-  if [ -n "$GH_TOKEN" ]; then
-    echo "GITHUB_TOKEN=${GH_TOKEN}" > .env
-    # .env.example の残りの設定を追記
-    grep -v '^GITHUB_TOKEN=' .env.example >> .env
-    echo "   GitHub token: set via gh CLI"
-  else
-    echo "   ⚠️  gh auth token が取得できませんでした。.env の GITHUB_TOKEN を手動で設定してください。"
-  fi
-else
-  echo "   ⚠️  gh CLI が見つかりません。.env の GITHUB_TOKEN を手動で設定してください。"
+# gh CLI の存在確認
+if ! command -v gh &>/dev/null; then
+  echo "❌ エラー: gh CLI が見つかりません。"
+  echo "   GitHub CLI をインストールしてから再実行してください。"
+  echo "   インストール方法: https://cli.github.com/"
+  exit 1
 fi
+
+# GitHub token を gh CLI から取得
+GH_TOKEN="$(gh auth token 2>/dev/null || true)"
+if [ -z "$GH_TOKEN" ]; then
+  echo "❌ エラー: gh auth token が取得できませんでした。"
+  echo "   先に 'gh auth login' を実行してください。"
+  exit 1
+fi
+
+cp .env.example .env
+echo "GITHUB_TOKEN=${GH_TOKEN}" > .env
+grep -v '^GITHUB_TOKEN=' .env.example >> .env
+echo "   GitHub token: set via gh CLI"
 echo ""
 
 # --- 3. TypeScript ビルド ---
