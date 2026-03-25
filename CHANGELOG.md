@@ -6,6 +6,15 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.29] - 2026-03-25
+
+### Changed
+
+- **Default timeout values raised to 1 hour** — Changed the default values of `CONTAINER_TIMEOUT` and `IDLE_TIMEOUT` in `src/config.ts` from `1800000` ms (30 min) to `3600000` ms (1 hour). These defaults apply when no value is set in `.env` or `process.env`.
+- **`setup.sh` — also sets `IDLE_TIMEOUT=3600000`** — Added `IDLE_TIMEOUT=3600000` to the generated `.env`. Also added a filter to exclude any commented `# IDLE_TIMEOUT` line from `.env.example` during copy to prevent duplicates.
+
+---
+
 ## [0.1.28] - 2026-03-25
 
 ### Fixed

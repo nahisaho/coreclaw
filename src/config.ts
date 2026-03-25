@@ -40,7 +40,7 @@ export const DATA_DIR = path.resolve(PROJECT_ROOT, 'data');
 export const CONTAINER_IMAGE =
   process.env.CONTAINER_IMAGE || envConfig.CONTAINER_IMAGE || 'coreclaw-agent:latest';
 export const CONTAINER_TIMEOUT = parseInt(
-  process.env.CONTAINER_TIMEOUT || envConfig.CONTAINER_TIMEOUT || '1800000',
+  process.env.CONTAINER_TIMEOUT || envConfig.CONTAINER_TIMEOUT || '3600000',
   10,
 );
 export const CONTAINER_MAX_OUTPUT_SIZE = parseInt(
@@ -53,7 +53,7 @@ export const CREDENTIAL_PROXY_PORT = parseInt(
 );
 export const IPC_POLL_INTERVAL = 1000;
 export const IDLE_TIMEOUT = parseInt(
-  process.env.IDLE_TIMEOUT || envConfig.IDLE_TIMEOUT || '1800000',
+  process.env.IDLE_TIMEOUT || envConfig.IDLE_TIMEOUT || '3600000',
   10,
 );
 export const MAX_CONCURRENT_CONTAINERS = Math.max(
