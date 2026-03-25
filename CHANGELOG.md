@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.28] - 2026-03-25
+
+### Fixed
+
+- **`CONTAINER_TIMEOUT` in `.env` was not applied** — `config.ts` read `CONTAINER_TIMEOUT` (and other config keys) from `process.env` only, so values written to `.env` were ignored unless explicitly passed as environment variables on startup. Fixed by adding all configurable keys (`CONTAINER_IMAGE`, `CONTAINER_TIMEOUT`, `CONTAINER_MAX_OUTPUT_SIZE`, `CREDENTIAL_PROXY_PORT`, `IDLE_TIMEOUT`, `MAX_CONCURRENT_CONTAINERS`) to the `readEnvFile()` call so `.env` values are correctly picked up at startup.
+
+---
+
 ## [0.1.27] - 2026-03-25
 
 ### Fixed
