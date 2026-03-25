@@ -67,6 +67,7 @@ for d in [DATA_DIR, FIG_DIR, RESULTS_DIR]:
     d.mkdir(parents=True, exist_ok=True)
 
 # === 出版品質スタイル ===
+# ⚠️ RULE: All graph text (titles, axis labels, legends, annotations) MUST be in English.
 plt.rcParams.update({
     "font.family": "sans-serif",
     "font.sans-serif": ["Noto Sans CJK JP", "IPAGothic", "Arial", "Helvetica", "DejaVu Sans"],

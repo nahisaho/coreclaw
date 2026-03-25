@@ -24,6 +24,10 @@ Exp-10 で確立した 15 種の図表テンプレートと、全実験に共通
 
 ## Quick Start
 
+> **⚠️ RULE: All figure text must be in English.**
+> This applies to all titles, axis labels, legends, tick labels, annotations, and captions.
+> Never use Japanese or any other language in graph text elements.
+
 ## グローバルスタイル設定
 
 以下の設定をスクリプトの冒頭で必ず適用する。

@@ -13,6 +13,34 @@ description: |
 A comprehensive collection of 195 scientific research skills from SATORI,
 organized as sub-skill directories within this skill package.
 
+## ⚠️ 必須：グラフ・図表はすべて英語で作成（全サブスキル共通）
+
+**グラフ・チャート・図（matplotlib / seaborn / plotly / その他可視化ライブラリ）を作成する際は、テキスト要素をすべて英語で記述すること。**
+
+| テキスト要素 | 規則 |
+|---|---|
+| 図タイトル (`title`, `suptitle`) | **英語のみ** |
+| 軸ラベル (`xlabel`, `ylabel`, `set_xlabel`, `set_ylabel`) | **英語のみ** |
+| 凡例 (`legend`, `label=`) | **英語のみ** |
+| 目盛りラベル (`xticklabels`, `yticklabels`) | **英語のみ** |
+| テキスト注釈 (`ax.text`, `ax.annotate`, `plt.text`) | **英語のみ** |
+| カラーバーラベル (`colorbar label`) | **英語のみ** |
+| パネルラベル・キャプション | **英語のみ** |
+
+```python
+# ✅ 正しい例
+ax.set_title("Gene Expression by Condition")
+ax.set_xlabel("Time (hours)")
+ax.set_ylabel("Expression Level (log2 FPKM)")
+ax.legend(["Control", "Treatment A", "Treatment B"])
+
+# ❌ 禁止例
+ax.set_title("条件別遺伝子発現量")      # 日本語タイトル禁止
+ax.set_xlabel("時間（時間）")           # 日本語軸ラベル禁止
+```
+
+---
+
 ## ⚠️ 必須：成果物のファイル保存ルール（全サブスキル共通）
 
 **すべての成果物は必ずファイルとして保存すること。チャット欄への出力のみで終わる
