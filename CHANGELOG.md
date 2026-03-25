@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.27] - 2026-03-25
+
+### Fixed
+
+- **Enforce English-only text in all generated graphs** — Added an explicit rule across scientist skills requiring all figure text elements (titles, axis labels, legends, tick labels, annotations, captions) to be written in English. Applied to:
+  - `skills/scientist/SKILL.md` — Added a mandatory "English-only graphs" rule section with correct/incorrect code examples, covering all matplotlib / seaborn / plotly text elements.
+  - `skills/scientist/scientific-pipeline-scaffold/SKILL.md` — Added inline comment to `plt.rcParams.update()` block enforcing the rule.
+  - `skills/scientist/scientific-publication-figures/SKILL.md` — Added warning callout in Quick Start section.
+  - `skills/scientist/scientific-hypothesis-pipeline/SKILL.md` — Added inline comment to `plt.rcParams.update()` block enforcing the rule.
+
+---
+
 ## [0.1.26] - 2026-03-25
 
 ### Changed
