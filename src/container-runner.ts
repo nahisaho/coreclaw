@@ -101,6 +101,30 @@ function normalizeMcpServer(server: McpServerConfig): McpServerConfig {
   };
 }
 
+function dedupeMcpServers(servers: McpServerConfig[]): McpServerConfig[] {
+  const seenNames = new Set<string>();
+  const deduped: McpServerConfig[] = [];
+
+  for (const server of servers) {
+    const normalized = normalizeMcpServer({
+      ...server,
+      name: server.name.trim(),
+      type: server.type.trim(),
+      command: server.command.trim(),
+      args: server.args?.trim(),
+      env: server.env?.trim(),
+    });
+    const key = normalized.name.toLowerCase();
+    if (key) {
+      if (seenNames.has(key)) continue;
+      seenNames.add(key);
+    }
+    deduped.push(normalized);
+  }
+
+  return deduped;
+}
+
 function buildVolumeMounts(
   group: RegisteredGroup,
   isMain: boolean,
@@ -288,7 +312,7 @@ function buildContainerArgs(
             : settings.mcp_servers;
         } catch { /* ignore parse errors */ }
       }
-      const validMcp = mcpList.map(normalizeMcpServer).filter((s: McpServerConfig) => s.name && s.command);
+      const validMcp = dedupeMcpServers(mcpList).filter((s: McpServerConfig) => s.name && s.command);
       // Apply per-chat MCP filter (if set, only include servers in the filter list)
       const filteredMcp = mcpFilter ? validMcp.filter(s => mcpFilter.includes(s.name)) : validMcp;
       if (filteredMcp.length > 0) {

@@ -272,6 +272,19 @@ test.describe('Settings', () => {
     await expect(card.locator('input[placeholder*="KEY=VAL"]')).toHaveValue('PYTHONIOENCODING=utf-8');
   });
 
+  test('does not duplicate ToolUniverse preset', async ({ page }) => {
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("MCP Servers")');
+    await clearMcpServers(page);
+
+    await page.click('button:has-text("ToolUniverse")');
+    await page.click('button:has-text("ToolUniverse")');
+
+    await expect(page.locator('.mcp-server-card')).toHaveCount(1);
+    await expect(page.locator('.mcp-server-card input.mcp-name')).toHaveValue('ToolUniverse');
+  });
+
   test('add Deep Research preset', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');
@@ -335,6 +348,7 @@ test.describe('Settings', () => {
   test('MCP servers stored in settings API', async ({ request }) => {
     // Save MCP servers via API
     const mcpServers = JSON.stringify([
+      { name: 'test-mcp', type: 'stdio', command: 'npx', args: '-y test-server', env: '' },
       { name: 'test-mcp', type: 'stdio', command: 'npx', args: '-y test-server', env: '' },
     ]);
     const putRes = await request.put('/api/settings', {

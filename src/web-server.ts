@@ -68,6 +68,56 @@ const SETTINGS_KEYS = [
 
 type SettingsMap = Record<string, string>;
 
+function sanitizeMcpServersValue(value: unknown): string {
+  let parsed: unknown[] = [];
+  if (typeof value === 'string') {
+    if (!value.trim()) return '';
+    try {
+      parsed = JSON.parse(value);
+    } catch {
+      return '';
+    }
+  } else if (Array.isArray(value)) {
+    parsed = value;
+  } else {
+    return '';
+  }
+
+  const seenNames = new Set<string>();
+  const deduped = parsed
+    .filter((server): server is Record<string, unknown> => !!server && typeof server === 'object')
+    .map((server) => ({
+      name: String(server.name || '').trim(),
+      type: String(server.type || 'stdio').trim() || 'stdio',
+      command: String(server.command || '').trim(),
+      args: String(server.args || '').trim(),
+      env: String(server.env || '').trim(),
+    }))
+    .filter((server) => {
+      if (!server.name || !server.command) return false;
+      const key = server.name.toLowerCase();
+      if (seenNames.has(key)) return false;
+      seenNames.add(key);
+      return true;
+    });
+
+  return deduped.length > 0 ? JSON.stringify(deduped) : '';
+}
+
+function sanitizeSettingsMap(settings: Record<string, unknown>): SettingsMap {
+  const sanitized: SettingsMap = {};
+  for (const key of SETTINGS_KEYS) {
+    const value = settings[key];
+    if (value === undefined) continue;
+    sanitized[key] = key === 'mcp_servers'
+      ? sanitizeMcpServersValue(value)
+      : typeof value === 'string'
+        ? value
+        : String(value ?? '');
+  }
+  return sanitized;
+}
+
 function settingsPath(): string {
   return path.join(DATA_DIR, 'settings.json');
 }
@@ -76,7 +126,12 @@ function loadSettings(): SettingsMap {
   const p = settingsPath();
   if (!fs.existsSync(p)) return {};
   try {
-    return JSON.parse(fs.readFileSync(p, 'utf-8'));
+    const parsed = JSON.parse(fs.readFileSync(p, 'utf-8'));
+    const sanitized = sanitizeSettingsMap(parsed);
+    if (JSON.stringify(parsed) !== JSON.stringify(sanitized)) {
+      saveSettings(sanitized);
+    }
+    return sanitized;
   } catch {
     return {};
   }
@@ -1198,7 +1253,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   if (method === 'PUT' && pathname === '/api/settings') {
     const body = JSON.parse(await readBody(req));
     const current = loadSettings();
-    const updated: Record<string, string> = {};
+    const updated: Record<string, string> = { ...current };
 
     for (const key of SETTINGS_KEYS) {
       const val = body[key];
@@ -1207,7 +1262,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       if (typeof val === 'string' && val.includes('•')) {
         updated[key] = current[key] || '';
       } else {
-        updated[key] = val;
+        updated[key] = key === 'mcp_servers' ? sanitizeMcpServersValue(val) : val;
       }
     }
 

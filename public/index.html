@@ -3892,7 +3892,7 @@ function modalSkillToggle(skillName) {
 
 function addMcpServerRow(server) {
   const s = server || { name: '', type: 'stdio', command: '', args: '', env: '' };
-  mcpServers.push(s);
+  mcpServers = dedupeMcpServers([...mcpServers, s]);
   renderMcpServers();
 }
 
@@ -3931,8 +3931,36 @@ function updateMcpField(el) {
   const idx = parseInt(el.dataset.idx);
   const field = el.dataset.field;
   mcpServers[idx][field] = el.value;
+  if (field === 'name') {
+    mcpServers = dedupeMcpServers(mcpServers);
+    renderMcpServers();
+    return;
+  }
   // Re-render if type changed (to show/hide args row)
   if (field === 'type') renderMcpServers();
+}
+
+function dedupeMcpServers(servers) {
+  const seenNames = new Set();
+  const deduped = [];
+
+  for (const server of servers || []) {
+    const normalized = normalizeMcpServer({
+      name: String(server?.name || '').trim(),
+      type: String(server?.type || 'stdio').trim() || 'stdio',
+      command: String(server?.command || '').trim(),
+      args: String(server?.args || '').trim(),
+      env: String(server?.env || '').trim(),
+    });
+    const nameKey = normalized.name.toLowerCase();
+    if (nameKey) {
+      if (seenNames.has(nameKey)) continue;
+      seenNames.add(nameKey);
+    }
+    deduped.push(normalized);
+  }
+
+  return deduped;
 }
 
 function normalizeMcpServer(server) {
@@ -3987,7 +4015,7 @@ async function populateMcpCheckboxes(containerId, selectedNames) {
     const settings = await api('/settings');
     if (settings.mcp_servers) {
       const list = typeof settings.mcp_servers === 'string' ? JSON.parse(settings.mcp_servers) : settings.mcp_servers;
-      servers = list.map(normalizeMcpServer).filter(s => s.name && s.command);
+      servers = dedupeMcpServers(list).filter(s => s.name && s.command);
     }
   } catch { /* ignore */ }
 
@@ -4122,7 +4150,7 @@ async function showSettings() {
     document.getElementById('settingsOllamaModel').value = settings.ollama_model || '';
     selectProvider(settings.ai_provider || 'openai');
     mcpServers = settings.mcp_servers ? (typeof settings.mcp_servers === 'string' ? JSON.parse(settings.mcp_servers) : settings.mcp_servers) : [];
-    mcpServers = mcpServers.map(normalizeMcpServer);
+    mcpServers = dedupeMcpServers(mcpServers);
     renderMcpServers();
   } catch {
     selectProvider('openai');
@@ -4148,7 +4176,7 @@ async function saveSettings() {
     ollama_model: document.getElementById('settingsOllamaModel').value.trim(),
     github_username: document.getElementById('settingsGithubUser').value.trim(),
 
-    mcp_servers: JSON.stringify(mcpServers.filter(s => s.name && s.command)),
+    mcp_servers: JSON.stringify(dedupeMcpServers(mcpServers).filter(s => s.name && s.command)),
   };
   await api('/settings', {
     method: 'PUT',
