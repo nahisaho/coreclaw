@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.33] - 2026-03-26
+
+### Summary (v0.1.30–v0.1.32)
+
+- **v0.1.30**: `agent_done` replay on WebSocket reconnect — prevents missed completion notifications.
+- **v0.1.31**: Agent Status Panel (progress bar, step tracking, tool call chips, elapsed timer).
+- **v0.1.32**: Real-time status updates from container stderr (`agent_status` events).
+
+---
+
 ## [0.1.32] - 2026-03-26
 
 ### Fixed
