@@ -41,7 +41,12 @@ import {
 } from './memory.js';
 import { getDatabase } from './db.js';
 import { DATA_DIR, GROUPS_DIR } from './config.js';
-import { listAvailableSkills, getSkillMetadata } from './skills-sync.js';
+import {
+  getSkillMetadata,
+  importMarketplaceSkillGroup,
+  listAvailableSkills,
+  listMarketplaceSkillGroups,
+} from './skills-sync.js';
 import { syncExperiment, pullExperiment } from './github-sync.js';
 import { execSync, spawn } from 'child_process';
 import { createDeflateRaw, inflateRawSync } from 'zlib';
@@ -996,6 +1001,36 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return { name, description: meta?.description || '', fileCount };
     });
     sendJson(res, 200, skills);
+    return;
+  }
+
+  // GET /api/skills/marketplace
+  if (method === 'GET' && pathname === '/api/skills/marketplace') {
+    try {
+      const groups = await listMarketplaceSkillGroups();
+      sendJson(res, 200, groups);
+    } catch (err) {
+      logger.error({ err }, 'Failed to list marketplace skills');
+      sendJson(res, 502, { error: 'Failed to load marketplace skills' });
+    }
+    return;
+  }
+
+  // POST /api/skills/marketplace/import
+  if (method === 'POST' && pathname === '/api/skills/marketplace/import') {
+    try {
+      const body = JSON.parse(await readBody(req));
+      const group = String(body.group || '').trim();
+      if (!group) {
+        sendJson(res, 400, { error: 'Marketplace group is required' });
+        return;
+      }
+      const result = importMarketplaceSkillGroup(group);
+      sendJson(res, 200, { ...result, imported: true });
+    } catch (err) {
+      logger.error({ err }, 'Failed to import marketplace skill');
+      sendJson(res, 500, { error: err instanceof Error ? err.message : 'Failed to import marketplace skill' });
+    }
     return;
   }
 

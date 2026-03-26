@@ -322,6 +322,36 @@ test.describe('Settings', () => {
     await expect(options.nth(2)).toHaveText('Streamable HTTP');
   });
 
+  test('loads marketplace skills in Skills tab', async ({ page }) => {
+    await page.route('**/api/skills/marketplace', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            slug: 'scientist',
+            name: 'Scientist',
+            description: 'Research pack',
+            icon: '🔬',
+            count: 196,
+            installed: false,
+          },
+        ]),
+      });
+    });
+
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("Skills")');
+
+    const marketplace = page.locator('#marketplaceSkillList');
+    await expect(marketplace.locator('.skill-card')).toHaveCount(1);
+    await expect(marketplace).toContainText('Scientist');
+    await expect(marketplace).toContainText('Research pack');
+    await expect(marketplace).toContainText('196 skills');
+    await expect(marketplace.locator('button:has-text("Import")')).toBeVisible();
+  });
+
   test('MCP servers persist via settings save/reload', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');

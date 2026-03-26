@@ -353,6 +353,25 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 }
 .skill-card-delete:hover { color: var(--red, #e55); background: rgba(255,80,80,.1); }
 .skill-empty { color: var(--text-muted); font-size: 13px; text-align: center; padding: 20px 0; }
+.marketplace-section { margin-top: 16px; padding-top: 16px; border-top: 1px solid var(--border); }
+.marketplace-header {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 8px; margin-bottom: 10px;
+}
+.marketplace-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.marketplace-list { display: flex; flex-direction: column; gap: 6px; }
+.marketplace-card-meta {
+  display: flex; align-items: center; gap: 8px; margin-left: 12px; flex-shrink: 0;
+}
+.marketplace-count {
+  font-size: 11px; color: var(--text-muted); white-space: nowrap;
+}
+.marketplace-installed {
+  font-size: 11px; color: var(--green); background: rgba(34,197,94,.12);
+  border: 1px solid rgba(34,197,94,.2); border-radius: 999px; padding: 2px 8px;
+}
+.marketplace-import-btn { min-width: 82px; text-align: center; }
+.marketplace-import-btn[disabled] { opacity: .6; cursor: default; }
 
 /* Skill card file count */
 .skill-card-files {
@@ -1514,6 +1533,18 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
           </div>
           <div id="skillList" class="skill-list"></div>
           <div id="skillEmpty" class="skill-empty">No skills found.</div>
+
+          <div class="marketplace-section">
+            <div class="marketplace-header">
+              <div>
+                <div class="marketplace-title">Marketplace Import</div>
+                <div class="field-hint">Import official skill packs from nahisaho/coreclaw-marketplace.</div>
+              </div>
+              <button class="btn-skill-action" onclick="loadMarketplaceSkillList(true)">🔄 Refresh Marketplace</button>
+            </div>
+            <div id="marketplaceSkillList" class="marketplace-list"></div>
+            <div id="marketplaceSkillEmpty" class="skill-empty">Loading marketplace skills...</div>
+          </div>
         </div>
       </div>
 
@@ -3382,7 +3413,10 @@ function switchSettingsTab(tabName) {
   document.querySelectorAll('.settings-tab-content').forEach(c => c.classList.remove('active'));
   document.querySelector(`.settings-tab[onclick*="'${tabName}'"]`).classList.add('active');
   document.getElementById('settingsTab-' + tabName).classList.add('active');
-  if (tabName === 'skills') loadSkillList();
+  if (tabName === 'skills') {
+    loadSkillList();
+    loadMarketplaceSkillList();
+  }
 }
 
 // ===== Sidebar toggle =====
@@ -3406,6 +3440,7 @@ function selectProvider(provider) {
 
 // ===== Skills management =====
 let cachedSkills = [];
+let cachedMarketplaceSkills = [];
 
 async function loadSkillList() {
   try {
@@ -3440,6 +3475,80 @@ async function loadSkillList() {
       </div>`;
     }).join('');
   } catch (e) { console.error('Failed to load skills', e); }
+}
+
+async function loadMarketplaceSkillList(force = false) {
+  const list = document.getElementById('marketplaceSkillList');
+  const empty = document.getElementById('marketplaceSkillEmpty');
+  if (!list || !empty) return;
+  if (force || !cachedMarketplaceSkills.length) {
+    empty.style.display = '';
+    empty.textContent = 'Loading marketplace skills...';
+    list.innerHTML = '';
+    try {
+      const res = await fetch('/api/skills/marketplace');
+      if (!res.ok) throw new Error('Failed to load marketplace');
+      cachedMarketplaceSkills = await res.json();
+    } catch (e) {
+      console.error('Failed to load marketplace skills', e);
+      cachedMarketplaceSkills = [];
+      empty.textContent = 'Failed to load marketplace skills.';
+      return;
+    }
+  }
+
+  if (!cachedMarketplaceSkills.length) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.textContent = 'No marketplace skills found.';
+    return;
+  }
+
+  empty.style.display = 'none';
+  list.innerHTML = cachedMarketplaceSkills.map(group => `
+    <div class="skill-card" id="marketplace-skill-${esc(group.slug)}">
+      <div class="skill-card-info">
+        <div class="skill-card-name">${esc(group.icon || '📦')} ${esc(group.name)}</div>
+        <div class="skill-card-desc">${esc(group.description || '')}</div>
+      </div>
+      <div class="marketplace-card-meta">
+        <span class="marketplace-count">${group.count || 0} skills</span>
+        ${group.installed ? '<span class="marketplace-installed">Installed</span>' : ''}
+        <button class="btn-skill-action marketplace-import-btn" onclick="importMarketplaceSkill(\'${esc(group.slug)}\', this)">${group.installed ? 'Update' : 'Import'}</button>
+      </div>
+    </div>
+  `).join('');
+}
+
+async function importMarketplaceSkill(groupName, button) {
+  const actionLabel = button?.textContent || 'Import';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Importing...';
+  }
+
+  try {
+    const res = await fetch('/api/skills/marketplace/import', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ group: groupName }),
+    });
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Failed to import marketplace skill');
+      return;
+    }
+    await Promise.all([loadSkillList(), loadMarketplaceSkillList(true)]);
+    alert(`${data.updated ? 'Updated' : 'Imported'} ${data.name} (${data.fileCount} files)`);
+  } catch (e) {
+    console.error('Marketplace import failed', e);
+    alert('Failed to import marketplace skill');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = actionLabel;
+    }
+  }
 }
 
 function showNewSkillForm() {
