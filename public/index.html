@@ -920,6 +920,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   color: var(--accent);
   background: var(--bg-active);
 }
+.asp-elapsed {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  flex-shrink: 0;
+  min-width: 28px;
+  text-align: right;
+}
 
 /* Message search results */
 .msg-search-item {
@@ -1668,6 +1676,7 @@ function connectWs() {
       for (const task of data.tasks) {
         if (task.status === 'running' && task.experimentId === currentExpId && !activeTasks[task.id]) {
           activeTasks[task.id] = { streamBuffer: task.streamingText || '' };
+          showStatusPanel(task.id);
           // Re-render any in-progress streaming text after reload
           if (task.streamingText) {
             updateStreamingMessage(task.streamingText, task.id);
@@ -1696,7 +1705,16 @@ function connectWs() {
         break;
       case 'agent_start':
         if (data.taskId) {
-          activeTasks[data.taskId] = { streamBuffer: '' };
+          const elapsed0 = Date.now();
+          const elapsedTimer = setInterval(() => {
+            const elEl = document.getElementById('asp-elapsed-' + data.taskId);
+            if (!elEl) { clearInterval(elapsedTimer); return; }
+            const s = Math.floor((Date.now() - elapsed0) / 1000);
+            elEl.textContent = s < 60 ? s + 's' : Math.floor(s/60) + 'm ' + (s%60) + 's';
+          }, 1000);
+          activeTasks[data.taskId] = { streamBuffer: '', elapsedTimer, startedAt: Date.now() };
+          // Show the status panel immediately — don't wait for first chunk
+          showStatusPanel(data.taskId);
         }
         break;
       case 'agent_chunk':
@@ -1707,6 +1725,7 @@ function connectWs() {
         break;
       case 'agent_done':
         if (data.taskId) {
+          if (activeTasks[data.taskId]?.elapsedTimer) clearInterval(activeTasks[data.taskId].elapsedTimer);
           removeStreamingMessage(data.taskId);
           delete activeTasks[data.taskId];
         }
@@ -1723,6 +1742,7 @@ function connectWs() {
         break;
       case 'agent_error':
         if (data.taskId) {
+          if (activeTasks[data.taskId]?.elapsedTimer) clearInterval(activeTasks[data.taskId].elapsedTimer);
           removeStreamingMessage(data.taskId);
           delete activeTasks[data.taskId];
         }
@@ -1730,6 +1750,7 @@ function connectWs() {
         break;
       case 'agent_cancelled':
         if (data.taskId) {
+          if (activeTasks[data.taskId]?.elapsedTimer) clearInterval(activeTasks[data.taskId].elapsedTimer);
           removeStreamingMessage(data.taskId);
           delete activeTasks[data.taskId];
         }
@@ -2462,6 +2483,31 @@ function appendMessage(msg) {
   scrollToBottom();
 }
 
+// Create streaming message shell with status panel immediately (before any chunks arrive)
+function showStatusPanel(taskId) {
+  const sid = taskId || 'default';
+  const elId = 'streaming-msg-' + sid;
+  if (document.getElementById(elId)) return; // already exists
+  const area = document.getElementById('messagesArea');
+  const el = document.createElement('div');
+  el.id = elId;
+  el.className = 'message assistant streaming';
+  el.innerHTML =
+    '<div class="msg-role">CoreClaw <button class="streaming-stop-btn" onclick="stopTask(\'' + (taskId || '') + '\')">⏹ Stop</button></div>' +
+    '<div class="agent-status-panel" id="asp-' + sid + '">' +
+      '<div class="asp-progress"><div class="asp-progress-fill indeterminate" id="asp-fill-' + sid + '"></div></div>' +
+      '<div class="asp-body">' +
+        '<span class="asp-spinner"></span>' +
+        '<span class="asp-step-text" id="asp-step-' + sid + '">エージェント起動中...</span>' +
+        '<span class="asp-elapsed" id="asp-elapsed-' + sid + '">0s</span>' +
+      '</div>' +
+      '<div class="asp-tools" id="asp-tools-' + sid + '"></div>' +
+    '</div>' +
+    '<div class="msg-content"></div>';
+  area.appendChild(el);
+  scrollToBottom();
+}
+
 // Parse accumulated agent output text to extract step number, total steps, and tool names.
 function parseStatusFromText(text) {
   const lines = text.split('\n');
@@ -2513,25 +2559,10 @@ function parseStatusFromText(text) {
 }
 
 function updateStreamingMessage(text, taskId) {
-  const elId = 'streaming-msg-' + (taskId || 'default');
   const sid = taskId || 'default';
-  let el = document.getElementById(elId);
-  if (!el) {
-    const area = document.getElementById('messagesArea');
-    el = document.createElement('div');
-    el.id = elId;
-    el.className = 'message assistant streaming';
-    el.innerHTML =
-      '<div class="msg-role">CoreClaw <button class="streaming-stop-btn" onclick="stopTask(\'' + (taskId || '') + '\')">⏹ Stop</button></div>' +
-      '<div class="agent-status-panel" id="asp-' + sid + '">' +
-        '<div class="asp-progress"><div class="asp-progress-fill indeterminate" id="asp-fill-' + sid + '"></div></div>' +
-        '<div class="asp-body"><span class="asp-spinner"></span>' +
-        '<span class="asp-step-text" id="asp-step-' + sid + '">処理中...</span></div>' +
-        '<div class="asp-tools" id="asp-tools-' + sid + '"></div>' +
-      '</div>' +
-      '<div class="msg-content"></div>';
-    area.appendChild(el);
-  }
+  // Ensure panel exists (showStatusPanel is idempotent)
+  showStatusPanel(taskId);
+  const el = document.getElementById('streaming-msg-' + sid);
   // Update status panel
   const status = parseStatusFromText(text);
   const stepEl = document.getElementById('asp-step-' + sid);

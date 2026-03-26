@@ -14,7 +14,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
   - **Progress bar**: Determinate (`Step X/Y` detected → fills to `X/Y × 100%`) or animated indeterminate shimmer when no step count is available.
   - **Current step text**: Parses `## Step N:`, `**Step N/M: ...**`, and `Step N of M:` patterns from the streamed output and displays `Step N/M` badge + description.
   - **Tool call chips**: Detects MCP tool names in backtick notation (e.g. `` `PubMed_search_articles` ``) and 30+ known database names (PubMed, OpenAlex, EuropePMC, Crossref, ArXiv, SemanticScholar, AlphaFold, etc.) mentioned in the output. Each detected tool appears as a chip; the most recently seen tool is highlighted in accent color.
-  The panel disappears automatically when the agent completes or is cancelled.
+  - **Elapsed timer**: Shows running time (`0s`, `1m 30s`, etc.) updated every second from `agent_start`.
+  - Panel appears immediately on `agent_start` (not delayed until first chunk). `showStatusPanel()` is idempotent and also called on `list_tasks` recovery after reload.
+  The panel disappears automatically when the agent completes, errors, or is cancelled.
 
 ---
 
