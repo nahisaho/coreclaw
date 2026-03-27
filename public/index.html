@@ -396,9 +396,22 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   line-height: 1.4;
 }
 .skill-scan-info:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-subtle, rgba(99,102,241,.08)); }
+.marketplace-info-btn {
+  background: none; border: 1px solid var(--border); color: var(--text-muted);
+  font-size: 10px; padding: 1px 5px; border-radius: 4px; cursor: pointer;
+  flex-shrink: 0; transition: all .15s; font-family: var(--font-mono); line-height: 1.4;
+}
+.marketplace-info-btn:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-subtle, rgba(99,102,241,.08)); }
 
 /* Scan result modal */
 .modal.scan-modal { min-width: 520px; max-width: 640px; max-height: 75vh; display: flex; flex-direction: column; }
+.modal.marketplace-info-modal { min-width: 420px; max-width: 560px; max-height: 70vh; display: flex; flex-direction: column; }
+.marketplace-info-body { color: var(--text-secondary); line-height: 1.6; white-space: pre-wrap; overflow-y: auto; }
+.marketplace-info-meta { display: flex; align-items: center; gap: 8px; margin-bottom: 12px; }
+.marketplace-info-badge {
+  font-size: 11px; color: var(--text-muted); background: var(--bg-tertiary);
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px;
+}
 .scan-summary {
   display: flex; gap: 16px; padding: 12px 0; border-bottom: 1px solid var(--border); margin-bottom: 12px;
 }
@@ -1627,6 +1640,23 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       </div>
     </div>
     <div class="av-body" id="avBody"></div>
+  </div>
+</div>
+
+<div class="modal-overlay" id="marketplaceInfoModal" onclick="if(event.target===this)closeModal('marketplaceInfoModal')">
+  <div class="modal marketplace-info-modal">
+    <div class="modal-header">
+      <h3 id="marketplaceInfoTitle">Marketplace Skill</h3>
+      <button class="modal-close" onclick="closeModal('marketplaceInfoModal')" title="Close">✕</button>
+    </div>
+    <div class="marketplace-info-meta">
+      <span class="marketplace-info-badge" id="marketplaceInfoCount"></span>
+      <span class="marketplace-installed" id="marketplaceInfoInstalled" style="display:none">Installed</span>
+    </div>
+    <div class="marketplace-info-body" id="marketplaceInfoBody"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('marketplaceInfoModal')">Close</button>
+    </div>
   </div>
 </div>
 
@@ -3513,11 +3543,26 @@ async function loadMarketplaceSkillList(force = false) {
       </div>
       <div class="marketplace-card-meta">
         <span class="marketplace-count">${group.count || 0} skills</span>
+        <button class="marketplace-info-btn" onclick="showMarketplaceInfo('${esc(group.slug)}')" title="Show description">info</button>
         ${group.installed ? '<span class="marketplace-installed">Installed</span>' : ''}
         <button class="btn-skill-action marketplace-import-btn" onclick="importMarketplaceSkill(\'${esc(group.slug)}\', this)">${group.installed ? 'Update' : 'Import'}</button>
       </div>
     </div>
   `).join('');
+}
+
+function showMarketplaceInfo(groupSlug) {
+  const group = cachedMarketplaceSkills.find(item => item.slug === groupSlug);
+  if (!group) return;
+
+  document.getElementById('marketplaceInfoTitle').textContent = `${group.icon || '📦'} ${group.name}`;
+  document.getElementById('marketplaceInfoCount').textContent = `${group.count || 0} skills`;
+  document.getElementById('marketplaceInfoBody').textContent = group.description || 'No description available.';
+
+  const installed = document.getElementById('marketplaceInfoInstalled');
+  installed.style.display = group.installed ? 'inline-flex' : 'none';
+
+  document.getElementById('marketplaceInfoModal').classList.add('visible');
 }
 
 async function importMarketplaceSkill(groupName, button) {

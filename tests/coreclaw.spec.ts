@@ -352,6 +352,35 @@ test.describe('Settings', () => {
     await expect(marketplace.locator('button:has-text("Import")')).toBeVisible();
   });
 
+  test('shows marketplace description popup from info button', async ({ page }) => {
+    await page.route('**/api/skills/marketplace', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            slug: 'educationalist',
+            name: 'Educationalist',
+            description: 'Skills for educators and curriculum design.',
+            icon: '📚',
+            count: 1,
+            installed: true,
+          },
+        ]),
+      });
+    });
+
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("Skills")');
+    await page.locator('#marketplaceSkillList .marketplace-info-btn').click();
+
+    await expect(page.locator('#marketplaceInfoModal')).toHaveClass(/visible/);
+    await expect(page.locator('#marketplaceInfoTitle')).toContainText('Educationalist');
+    await expect(page.locator('#marketplaceInfoBody')).toContainText('Skills for educators and curriculum design.');
+    await expect(page.locator('#marketplaceInfoInstalled')).toBeVisible();
+  });
+
   test('reopens Skills tab with fresh marketplace data', async ({ page }) => {
     let marketplaceCalls = 0;
     await page.route('**/api/skills/marketplace', async (route) => {
