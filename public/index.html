@@ -358,6 +358,17 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   display: flex; align-items: center; justify-content: space-between;
   gap: 8px; margin-bottom: 10px;
 }
+.marketplace-search {
+  margin-bottom: 10px;
+}
+.marketplace-search input {
+  width: 100%; box-sizing: border-box;
+  padding: 8px 10px; background: var(--bg-primary);
+  border: 1px solid var(--border); border-radius: 6px;
+  color: var(--text-primary); font-size: 13px; outline: none;
+}
+.marketplace-search input:focus { border-color: var(--accent); }
+.marketplace-search input::placeholder { color: var(--text-muted); }
 .marketplace-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .marketplace-list { display: flex; flex-direction: column; gap: 6px; }
 .marketplace-card-meta {
@@ -1554,6 +1565,9 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
                 <div class="field-hint">Import official skill packs from nahisaho/coreclaw-marketplace.</div>
               </div>
               <button class="btn-skill-action" onclick="loadMarketplaceSkillList(true)">🔄 Refresh Marketplace</button>
+            </div>
+            <div class="marketplace-search">
+              <input type="text" id="marketplaceSearchInput" placeholder="Search marketplace skills by name or description" oninput="filterMarketplaceSkills(this.value)">
             </div>
             <div id="marketplaceSkillList" class="marketplace-list"></div>
             <div id="marketplaceSkillEmpty" class="skill-empty">Loading marketplace skills...</div>
@@ -3471,6 +3485,7 @@ function selectProvider(provider) {
 // ===== Skills management =====
 let cachedSkills = [];
 let cachedMarketplaceSkills = [];
+let marketplaceSearchTerm = '';
 
 async function loadSkillList() {
   try {
@@ -3510,7 +3525,11 @@ async function loadSkillList() {
 async function loadMarketplaceSkillList(force = false) {
   const list = document.getElementById('marketplaceSkillList');
   const empty = document.getElementById('marketplaceSkillEmpty');
+  const searchInput = document.getElementById('marketplaceSearchInput');
   if (!list || !empty) return;
+  if (searchInput && searchInput.value !== marketplaceSearchTerm) {
+    searchInput.value = marketplaceSearchTerm;
+  }
   if (force || !cachedMarketplaceSkills.length) {
     empty.style.display = '';
     empty.textContent = 'Loading marketplace skills...';
@@ -3534,8 +3553,39 @@ async function loadMarketplaceSkillList(force = false) {
     return;
   }
 
+  renderMarketplaceSkillList();
+}
+
+function filterMarketplaceSkills(value = '') {
+  marketplaceSearchTerm = String(value || '').trim().toLowerCase();
+  renderMarketplaceSkillList();
+}
+
+function renderMarketplaceSkillList() {
+  const list = document.getElementById('marketplaceSkillList');
+  const empty = document.getElementById('marketplaceSkillEmpty');
+  if (!list || !empty) return;
+
+  const filteredMarketplaceSkills = cachedMarketplaceSkills.filter(group => {
+    if (!marketplaceSearchTerm) return true;
+    const haystack = [group.slug, group.name, group.description]
+      .filter(Boolean)
+      .join(' ')
+      .toLowerCase();
+    return haystack.includes(marketplaceSearchTerm);
+  });
+
+  if (!filteredMarketplaceSkills.length) {
+    list.innerHTML = '';
+    empty.style.display = '';
+    empty.textContent = marketplaceSearchTerm
+      ? `No marketplace skills match "${marketplaceSearchTerm}".`
+      : 'No marketplace skills found.';
+    return;
+  }
+
   empty.style.display = 'none';
-  list.innerHTML = cachedMarketplaceSkills.map(group => `
+  list.innerHTML = filteredMarketplaceSkills.map(group => `
     <div class="skill-card" id="marketplace-skill-${esc(group.slug)}">
       <div class="skill-card-info">
         <div class="skill-card-name">${esc(group.icon || '📦')} ${esc(group.name)}</div>

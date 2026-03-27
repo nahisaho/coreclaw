@@ -381,6 +381,51 @@ test.describe('Settings', () => {
     await expect(page.locator('#marketplaceInfoInstalled')).toBeVisible();
   });
 
+  test('filters marketplace skills by search text', async ({ page }) => {
+    await page.route('**/api/skills/marketplace', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            slug: 'scientist',
+            name: 'Scientist',
+            description: 'Research workflows and analysis.',
+            icon: '🔬',
+            count: 196,
+            installed: false,
+          },
+          {
+            slug: 'educationalist',
+            name: 'Educationalist',
+            description: 'Skills for educators and curriculum design.',
+            icon: '📚',
+            count: 1,
+            installed: false,
+          },
+        ]),
+      });
+    });
+
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("Skills")');
+
+    const marketplace = page.locator('#marketplaceSkillList');
+    await expect(marketplace.locator('.skill-card')).toHaveCount(2);
+
+    await page.fill('#marketplaceSearchInput', 'curriculum');
+
+    await expect(marketplace.locator('.skill-card')).toHaveCount(1);
+    await expect(marketplace).toContainText('Educationalist');
+    await expect(marketplace).not.toContainText('Scientist');
+
+    await page.fill('#marketplaceSearchInput', 'no-match');
+
+    await expect(marketplace.locator('.skill-card')).toHaveCount(0);
+    await expect(page.locator('#marketplaceSkillEmpty')).toContainText('No marketplace skills match "no-match".');
+  });
+
   test('reopens Skills tab with fresh marketplace data', async ({ page }) => {
     let marketplaceCalls = 0;
     await page.route('**/api/skills/marketplace', async (route) => {
