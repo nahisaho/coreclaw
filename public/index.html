@@ -388,6 +388,11 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .skill-card-files {
   font-size: 11px; color: var(--text-muted); margin-left: 8px; flex-shrink: 0;
 }
+.skill-card-version {
+  font-size: 11px; color: var(--text-muted); margin-left: 8px; flex-shrink: 0;
+  padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
+  background: var(--bg-secondary); white-space: nowrap;
+}
 
 /* Skill scan status */
 .skill-scan-badge {
@@ -3514,6 +3519,7 @@ async function loadSkillList() {
           <div class="skill-card-name">${esc(s.name)}</div>
           <div class="skill-card-desc">${esc(s.description)}</div>
         </div>
+        <span class="skill-card-version">Version ${esc(s.version || '-')}</span>
         <span class="skill-card-files">${s.fileCount || 1} file${(s.fileCount || 1) > 1 ? 's' : ''}</span>
         ${badgeHtml}
         <button class="skill-card-delete" onclick="deleteSkill('${esc(s.name)}')" title="Delete">\ud83d\uddd1</button>

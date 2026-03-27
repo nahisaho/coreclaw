@@ -276,11 +276,11 @@ export function listAvailableSkills(): string[] {
 }
 
 /**
- * Get skill metadata (name and description from YAML frontmatter).
+ * Get skill metadata (name, description, and version from YAML frontmatter).
  */
 export function getSkillMetadata(
   skillName: string,
-): { name: string; description: string } | null {
+): { name: string; description: string; version: string } | null {
   const localSkillsPath = getLocalSkillsPath();
   if (!localSkillsPath) return null;
 
@@ -294,11 +294,13 @@ export function getSkillMetadata(
   const frontmatter = match[1];
   const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
   const descMatch = frontmatter.match(/^description:\s*\|?\s*\n?([\s\S]*?)$/m);
+  const versionMatch = frontmatter.match(/^version:\s*(.+)$/m);
 
   return {
     name: nameMatch ? nameMatch[1].trim() : skillName,
     description: descMatch
       ? descMatch[1].trim().replace(/\n\s*/g, ' ')
       : '',
+    version: versionMatch ? versionMatch[1].trim() : '',
   };
 }

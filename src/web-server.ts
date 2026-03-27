@@ -999,7 +999,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         };
         fileCount = countFiles(skillDir);
       }
-      return { name, description: meta?.description || '', fileCount };
+      return { name, description: meta?.description || '', version: meta?.version || '', fileCount };
     });
     sendJson(res, 200, skills);
     return;

@@ -461,6 +461,31 @@ test.describe('Settings', () => {
     await expect(marketplace.locator('.marketplace-installed')).toHaveCount(0);
   });
 
+  test('shows skill version in Skills tab', async ({ page }) => {
+    await page.route('**/api/skills', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            name: 'scientist',
+            description: 'Research pack',
+            version: '1.2.3',
+            fileCount: 196,
+          },
+        ]),
+      });
+    });
+
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("Skills")');
+
+    const skills = page.locator('#skillList');
+    await expect(skills).toContainText('scientist');
+    await expect(skills).toContainText('Version 1.2.3');
+  });
+
   test('MCP servers persist via settings save/reload', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');
@@ -910,6 +935,7 @@ test.describe('REST API', () => {
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
     expect(body.length).toBeGreaterThanOrEqual(1);
+    expect(body[0]).toHaveProperty('version');
   });
 
   test('PUT /api/settings saves and GET returns masked tokens', async ({ request }) => {
