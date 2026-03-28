@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.55] - 2026-03-29
+
+### Changed
+
+- **Activity English chrome**: Settings → General で Output Language を `English` にしたとき、Activity モーダルのタイトル、フィルタ、検索プレースホルダ、空状態メッセージも英語で表示されるようにしました。
+
 ## [0.1.54] - 2026-03-29
 
 ### Changed

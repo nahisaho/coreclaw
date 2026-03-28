@@ -1404,6 +1404,56 @@ test.describe('Chat Flow', () => {
       await expect(page.locator('#activityLogList')).not.toContainText('タスクを開始');
     });
 
+    test('activity modal chrome uses English when output language is English', async ({ page }) => {
+      await page.route('**/api/settings', async (route) => {
+        if (route.request().method() === 'GET') {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ output_language: 'en' }),
+          });
+          return;
+        }
+        await route.fallback();
+      });
+
+      await page.goto('/');
+
+      await createExperiment(page, 'Activity Modal English Test');
+
+      await page.route('**/api/experiments/*/process-history', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ tasks: [] }),
+        });
+      });
+      await page.route('**/api/experiments/*/activity', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ events: [] }),
+        });
+      });
+
+      await page.evaluate(() => {
+        window.showStatusPanel('activity-modal-en');
+      });
+
+      await page.locator('#streaming-msg-activity-modal-en .streaming-activity-btn').click();
+
+      await expect(page.locator('#activityLogTitle')).toHaveText('📋 Activity');
+      await expect(page.locator('#activityLogFilter')).toHaveValue('all');
+      await expect(page.locator('#activityLogFilter option:checked')).toHaveText('All activity');
+      await expect(page.locator('#activityLogTaskFilter option')).toHaveText('All tasks');
+      await expect(page.locator('#activityLogSearch')).toHaveAttribute('placeholder', 'Search by message, path, command, or tool...');
+      await expect(page.locator('#activityLogSummary')).toHaveText('No activity yet.');
+      await expect(page.locator('#activityLogList')).toContainText('No activity matches the current filters.');
+      await expect(page.locator('#activityLogFooterCloseButton')).toHaveText('Close');
+      await expect(page.locator('#activityLogModal')).not.toContainText('すべてのアクティビティ');
+      await expect(page.locator('#activityLogModal')).not.toContainText('すべてのタスク');
+    });
+
     test('streaming status uses English when output language is English', async ({ page }) => {
       await page.route('**/api/settings', async (route) => {
         if (route.request().method() === 'GET') {

@@ -2009,13 +2009,13 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 <div class="modal-overlay" id="activityLogModal" onclick="if(event.target===this)closeModal('activityLogModal')">
   <div class="modal activity-log-modal">
     <div class="modal-header">
-      <h3>📋 Activity</h3>
-      <button class="modal-close" onclick="closeModal('activityLogModal')" title="Close">✕</button>
+      <h3 id="activityLogTitle">📋 Activity</h3>
+      <button id="activityLogCloseButton" class="modal-close" onclick="closeModal('activityLogModal')" title="Close">✕</button>
     </div>
     <div class="process-history-summary" id="activityLogSummary"></div>
     <div class="activity-log-toolbar">
       <select id="activityLogFilter" class="input-field activity-log-filter" onchange="renderActivityLogModal()">
-        <option value="all">すべてのアクティビティ</option>
+        <option value="all">All activity</option>
         <option value="task">タスク</option>
         <option value="tool">ツール</option>
         <option value="command">コマンド</option>
@@ -2024,13 +2024,13 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
         <option value="system">システム</option>
       </select>
       <select id="activityLogTaskFilter" class="input-field activity-log-filter" onchange="renderActivityLogModal()">
-        <option value="all">すべてのタスク</option>
+        <option value="all">All tasks</option>
       </select>
-      <input id="activityLogSearch" class="input-field activity-log-search" type="text" placeholder="メッセージ、パス、コマンド、ツール名で検索..." oninput="renderActivityLogModal()" />
+      <input id="activityLogSearch" class="input-field activity-log-search" type="text" placeholder="Search by message, path, command, or tool..." oninput="renderActivityLogModal()" />
     </div>
     <div class="activity-log-list" id="activityLogList"></div>
     <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal('activityLogModal')">Close</button>
+      <button id="activityLogFooterCloseButton" class="btn-cancel" onclick="closeModal('activityLogModal')">Close</button>
     </div>
   </div>
 </div>
@@ -2082,12 +2082,31 @@ function outputLanguageText(jaText, enText) {
   return isEnglishOutputLanguage() ? enText : jaText;
 }
 
+function updateActivityLogStaticText() {
+  const title = document.getElementById('activityLogTitle');
+  if (title) {
+    title.textContent = outputLanguageText('📋 アクティビティ', '📋 Activity');
+  }
+
+  const closeButton = document.getElementById('activityLogCloseButton');
+  if (closeButton) {
+    closeButton.title = outputLanguageText('閉じる', 'Close');
+  }
+
+  const footerCloseButton = document.getElementById('activityLogFooterCloseButton');
+  if (footerCloseButton) {
+    footerCloseButton.textContent = outputLanguageText('閉じる', 'Close');
+  }
+}
+
 function updateActivityLogControls() {
+  updateActivityLogStaticText();
+
   const filter = document.getElementById('activityLogFilter');
   if (filter) {
     const previousValue = filter.value || 'all';
     filter.innerHTML = [
-      ['all', outputLanguageText('すべて', 'All')],
+      ['all', outputLanguageText('すべてのアクティビティ', 'All activity')],
       ['task', outputLanguageText('タスク', 'Task')],
       ['tool', outputLanguageText('ツール', 'Tool')],
       ['command', outputLanguageText('コマンド', 'Command')],
@@ -2096,6 +2115,13 @@ function updateActivityLogControls() {
       ['system', outputLanguageText('システム', 'System')],
     ].map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
     filter.value = previousValue;
+  }
+
+  const taskFilter = document.getElementById('activityLogTaskFilter');
+  if (taskFilter && taskFilter.options.length <= 1) {
+    const previousValue = taskFilter.value || 'all';
+    taskFilter.innerHTML = `<option value="all">${esc(outputLanguageText('すべてのタスク', 'All tasks'))}</option>`;
+    taskFilter.value = previousValue;
   }
 
   const search = document.getElementById('activityLogSearch');
