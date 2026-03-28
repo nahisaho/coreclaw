@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.36] - 2026-03-28
+
+### Added
+
+- **Marketplace search**: Added search in Settings → Skills Marketplace to filter official skill packs by name, slug, or description.
+- **Skill version badges**: Added version display in Settings → Skills using the optional top-level `version` field from each skill's `SKILL.md` frontmatter.
+
 ## [0.1.35] - 2026-03-27
 
 ### Added
