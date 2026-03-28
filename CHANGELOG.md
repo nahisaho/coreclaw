@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.52] - 2026-03-29
+
+### Changed
+
+- **English UI labels for auth and language hint**: 左ペインの `Copilot Auth` サマリー表示と Settings → General の出力言語説明文を英語表記に更新しました。
+
 ## [0.1.51] - 2026-03-29
 
 ### Fixed

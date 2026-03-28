@@ -1544,7 +1544,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
         </div>
       </div>
       <div class="sidebar-auth-status" id="sidebarAuthStatus" data-state="checking">
-        <div class="sidebar-auth-status-summary" id="sidebarAuthStatusSummary">Copilot認証: 確認中</div>
+        <div class="sidebar-auth-status-summary" id="sidebarAuthStatusSummary">Copilot Auth: Checking</div>
         <div class="sidebar-auth-status-message" id="sidebarAuthStatusMessage">GitHub Copilot 認証状態を確認しています。</div>
       </div>
     </div>
@@ -1742,7 +1742,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
               <option value="ja">日本語</option>
               <option value="en">English</option>
             </select>
-            <div class="field-hint">エージェントの最終回答の出力言語を指定します</div>
+            <div class="field-hint">Choose the output language for the agent's final response.</div>
           </div>
         </div>
       </div>
@@ -2080,6 +2080,17 @@ function getCopilotAuthStateLabel(status) {
   }
 }
 
+function getCopilotAuthSidebarStateLabel(status) {
+  switch (status.state) {
+    case 'authenticated': return 'Enabled';
+    case 'missing': return 'Not set';
+    case 'invalid': return 'Invalid';
+    case 'unauthorized': return 'Check required';
+    case 'error': return 'Check failed';
+    default: return 'Checking';
+  }
+}
+
 function getCopilotAuthSourceLabel(source) {
   switch (source) {
     case 'settings': return 'Settings';
@@ -2097,12 +2108,13 @@ function updateCopilotAuthStatusUi() {
     message: 'GitHub Copilot 認証状態を確認しています。',
   };
   const stateLabel = getCopilotAuthStateLabel(status);
+  const sidebarStateLabel = getCopilotAuthSidebarStateLabel(status);
   const sourceLabel = getCopilotAuthSourceLabel(status.source);
 
   const sidebar = document.getElementById('sidebarAuthStatus');
   if (sidebar) {
     sidebar.dataset.state = status.state || 'checking';
-    document.getElementById('sidebarAuthStatusSummary').textContent = `Copilot認証: ${stateLabel}`;
+    document.getElementById('sidebarAuthStatusSummary').textContent = `Copilot Auth: ${sidebarStateLabel}`;
     document.getElementById('sidebarAuthStatusMessage').textContent = status.message || 'GitHub Copilot 認証状態を確認しています。';
     sidebar.title = `${status.message || ''} (${sourceLabel})`.trim();
   }
