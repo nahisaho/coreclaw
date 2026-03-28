@@ -42,8 +42,10 @@ import {
 import { getDatabase } from './db.js';
 import { DATA_DIR, GROUPS_DIR } from './config.js';
 import {
+  getMarketplaceImportMetadata,
   getSkillMetadata,
   importMarketplaceSkillGroup,
+  isMarketplaceImportedSkill,
   listAvailableSkills,
   listMarketplaceSkillGroups,
 } from './skills-sync.js';
@@ -153,6 +155,7 @@ function saveSettings(settings: SettingsMap): void {
 // ---------------------------------------------------------------------------
 
 type ScanWhitelist = Record<string, string[]>; // skillName -> array of "file:label" keys
+const MARKETPLACE_IMPORT_METADATA_FILE = '.coreclaw-marketplace.json';
 
 function scanWhitelistPath(): string {
   return path.join(DATA_DIR, 'scan-whitelist.json');
@@ -171,6 +174,78 @@ function loadScanWhitelist(): ScanWhitelist {
 function saveScanWhitelist(wl: ScanWhitelist): void {
   fs.mkdirSync(path.dirname(scanWhitelistPath()), { recursive: true });
   fs.writeFileSync(scanWhitelistPath(), JSON.stringify(wl, null, 2));
+}
+
+function parseVersion(version: string): number[] {
+  return String(version || '')
+    .trim()
+    .replace(/^v/i, '')
+    .split('.')
+    .map((part) => Number.parseInt(part, 10))
+    .filter((part) => Number.isFinite(part));
+}
+
+function isVersionNewer(candidate: string, current: string): boolean {
+  const left = parseVersion(candidate);
+  const right = parseVersion(current);
+  const length = Math.max(left.length, right.length);
+
+  for (let index = 0; index < length; index += 1) {
+    const leftPart = left[index] ?? 0;
+    const rightPart = right[index] ?? 0;
+    if (leftPart > rightPart) return true;
+    if (leftPart < rightPart) return false;
+  }
+
+  return false;
+}
+
+async function getMarketplaceSkillStatus(skillName: string): Promise<{
+  marketplaceImported: boolean;
+  marketplaceSlug: string;
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+}>
+
+async function getMarketplaceSkillStatus(
+  skillName: string,
+  marketplaceGroups?: Awaited<ReturnType<typeof listMarketplaceSkillGroups>>,
+): Promise<{
+  marketplaceImported: boolean;
+  marketplaceSlug: string;
+  currentVersion: string;
+  latestVersion: string;
+  updateAvailable: boolean;
+}> {
+  const skillDir = path.resolve(process.cwd(), 'skills', skillName);
+  const localMeta = getSkillMetadata(skillName);
+  const importMeta = getMarketplaceImportMetadata(skillName);
+  const currentVersion = localMeta?.version || importMeta?.version || '';
+
+  let marketplaceImported = isMarketplaceImportedSkill(skillName);
+  let latestVersion = '';
+  let marketplaceSlug = importMeta?.slug || skillName;
+
+  try {
+    const groups = marketplaceGroups ?? await listMarketplaceSkillGroups();
+    const marketplaceGroup = groups.find((group) => group.slug === marketplaceSlug);
+    if (marketplaceGroup) {
+      latestVersion = marketplaceGroup.version || '';
+      marketplaceImported = marketplaceImported || fs.existsSync(path.join(skillDir, 'group.json'));
+      marketplaceSlug = marketplaceGroup.slug;
+    }
+  } catch (err) {
+    logger.warn({ skill: skillName, err }, 'Failed to resolve marketplace status for local skill');
+  }
+
+  return {
+    marketplaceImported,
+    marketplaceSlug,
+    currentVersion: currentVersion || (marketplaceImported ? latestVersion : ''),
+    latestVersion,
+    updateAvailable: Boolean(currentVersion && latestVersion && isVersionNewer(latestVersion, currentVersion)),
+  };
 }
 
 // ---------------------------------------------------------------------------
@@ -984,8 +1059,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 
   // GET /api/skills
   if (method === 'GET' && pathname === '/api/skills') {
-    const skills = listAvailableSkills().map((name) => {
+    let marketplaceGroups: Awaited<ReturnType<typeof listMarketplaceSkillGroups>> = [];
+    try {
+      marketplaceGroups = await listMarketplaceSkillGroups();
+    } catch (err) {
+      logger.warn({ err }, 'Failed to preload marketplace groups for local skills');
+    }
+
+    const skills = await Promise.all(listAvailableSkills().map(async (name) => {
       const meta = getSkillMetadata(name);
+      const marketplaceStatus = await getMarketplaceSkillStatus(name, marketplaceGroups);
       // Count files in the skill directory
       const skillDir = path.resolve(process.cwd(), 'skills', name);
       let fileCount = 0;
@@ -993,15 +1076,47 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         const countFiles = (dir: string): number => {
           let n = 0;
           for (const e of fs.readdirSync(dir, { withFileTypes: true })) {
+            if (e.name === MARKETPLACE_IMPORT_METADATA_FILE) continue;
             n += e.isDirectory() ? countFiles(path.join(dir, e.name)) : 1;
           }
           return n;
         };
         fileCount = countFiles(skillDir);
       }
-      return { name, description: meta?.description || '', version: meta?.version || '', fileCount };
-    });
+      return {
+        name,
+        description: meta?.description || '',
+        version: meta?.version || marketplaceStatus.currentVersion || '',
+        fileCount,
+        marketplaceImported: marketplaceStatus.marketplaceImported,
+        marketplaceSlug: marketplaceStatus.marketplaceSlug,
+        latestVersion: marketplaceStatus.latestVersion,
+        updateAvailable: marketplaceStatus.updateAvailable,
+      };
+    }));
     sendJson(res, 200, skills);
+    return;
+  }
+
+  // GET /api/skills/:name/marketplace-status
+  if (method === 'GET' && pathname.match(/^\/api\/skills\/[^/]+\/marketplace-status$/)) {
+    const name = pathname.split('/')[3].replace(/[^a-zA-Z0-9_-]/g, '');
+    const skillDir = path.resolve(process.cwd(), 'skills', name);
+    if (!fs.existsSync(skillDir)) {
+      sendJson(res, 404, { error: 'Skill not found' });
+      return;
+    }
+
+    const status = await getMarketplaceSkillStatus(name);
+    if (!status.marketplaceImported) {
+      sendJson(res, 404, { error: 'Marketplace metadata is not available for this skill' });
+      return;
+    }
+
+    sendJson(res, 200, {
+      name,
+      ...status,
+    });
     return;
   }
 

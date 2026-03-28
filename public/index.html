@@ -393,6 +393,16 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   padding: 2px 8px; border: 1px solid var(--border); border-radius: 999px;
   background: var(--bg-secondary); white-space: nowrap;
 }
+.skill-card-actions {
+  display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap;
+  gap: 8px; margin-left: 12px; flex-shrink: 0;
+}
+.skill-marketplace-status {
+  font-size: 11px; color: var(--text-muted); background: var(--bg-secondary);
+  border: 1px solid var(--border); border-radius: 999px; padding: 2px 8px;
+  white-space: nowrap;
+}
+.skill-marketplace-btn[disabled] { opacity: .6; cursor: default; }
 
 /* Skill scan status */
 .skill-scan-badge {
@@ -3514,16 +3524,27 @@ async function loadSkillList() {
         ? '<span class="skill-scan-badge ' + scanClass + '" title="' + scanTitle + '" data-skill="' + esc(s.name) + '"></span>'
           + '<button class="skill-scan-info" onclick="showScanDetail(\'' + esc(s.name) + '\')" title="Scan details">info</button>'
         : '';
+      const marketplaceStatus = s.marketplaceImported
+        ? `<span class="skill-marketplace-status">${esc(s.updateAvailable ? `Update available: ${s.latestVersion || '-'}` : s.latestVersion ? `Marketplace ${s.latestVersion}` : 'Marketplace import')}</span>`
+        : '';
+      const marketplaceButtons = s.marketplaceImported
+        ? `<button class="btn-skill-action skill-marketplace-btn" onclick="checkMarketplaceSkillUpdate('${esc(s.name)}', this)">Check Update</button>
+           <button class="btn-skill-action skill-marketplace-btn" onclick="updateInstalledMarketplaceSkill('${esc(s.marketplaceSlug || s.name)}', this)" ${s.updateAvailable ? '' : 'disabled'}>${s.updateAvailable ? 'Update' : 'Up to date'}</button>`
+        : '';
       return `
       <div class="skill-card" id="skill-card-${esc(s.name)}">
         <div class="skill-card-info">
           <div class="skill-card-name">${esc(s.name)}</div>
           <div class="skill-card-desc">${esc(s.description)}</div>
         </div>
-        <span class="skill-card-version">Version ${esc(s.version || '-')}</span>
-        <span class="skill-card-files">${s.fileCount || 1} file${(s.fileCount || 1) > 1 ? 's' : ''}</span>
-        ${badgeHtml}
-        <button class="skill-card-delete" onclick="deleteSkill('${esc(s.name)}')" title="Delete">\ud83d\uddd1</button>
+        <div class="skill-card-actions">
+          <span class="skill-card-version">Version ${esc(s.version || '-')}</span>
+          <span class="skill-card-files">${s.fileCount || 1} file${(s.fileCount || 1) > 1 ? 's' : ''}</span>
+          ${marketplaceStatus}
+          ${badgeHtml}
+          ${marketplaceButtons}
+          <button class="skill-card-delete" onclick="deleteSkill('${esc(s.name)}')" title="Delete">🗑</button>
+        </div>
       </div>`;
     }).join('');
   } catch (e) { console.error('Failed to load skills', e); }
@@ -3653,6 +3674,39 @@ async function importMarketplaceSkill(groupName, button) {
       button.textContent = actionLabel;
     }
   }
+}
+
+async function checkMarketplaceSkillUpdate(skillName, button) {
+  const actionLabel = button?.textContent || 'Check Update';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Checking...';
+  }
+
+  try {
+    const res = await fetch('/api/skills/' + encodeURIComponent(skillName) + '/marketplace-status');
+    const data = await res.json();
+    if (!res.ok) {
+      alert(data.error || 'Failed to check marketplace update');
+      return;
+    }
+    await Promise.all([loadSkillList(), loadMarketplaceSkillList(true)]);
+    alert(data.updateAvailable
+      ? `${skillName}: update available (${data.currentVersion || '-'} -> ${data.latestVersion || '-'})`
+      : `${skillName}: up to date (${data.currentVersion || data.latestVersion || '-'})`);
+  } catch (e) {
+    console.error('Marketplace update check failed', e);
+    alert('Failed to check marketplace update');
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = actionLabel;
+    }
+  }
+}
+
+async function updateInstalledMarketplaceSkill(groupName, button) {
+  await importMarketplaceSkill(groupName, button);
 }
 
 function showNewSkillForm() {

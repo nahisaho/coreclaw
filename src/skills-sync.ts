@@ -14,6 +14,7 @@ const MARKETPLACE_REPO_URL = 'https://github.com/nahisaho/coreclaw-marketplace.g
 const MARKETPLACE_API_BASE = 'https://api.github.com/repos/nahisaho/coreclaw-marketplace/contents';
 const MARKETPLACE_RAW_BASE = 'https://raw.githubusercontent.com/nahisaho/coreclaw-marketplace/main';
 const MARKETPLACE_SKILLS_PATH = 'coreclaw-skills-hub/skills';
+const MARKETPLACE_IMPORT_METADATA_FILE = '.coreclaw-marketplace.json';
 
 export interface MarketplaceSkillGroup {
   slug: string;
@@ -41,6 +42,12 @@ interface MarketplaceSkillMetadata {
   version?: string;
 }
 
+export interface MarketplaceImportMetadata {
+  slug: string;
+  version: string;
+  importedAt: string;
+}
+
 /**
  * Resolve the path to the local skills directory.
  */
@@ -54,6 +61,10 @@ function getLocalSkillsPath(): string | null {
 
 function getSkillsRoot(): string {
   return path.resolve(process.cwd(), 'skills');
+}
+
+function getMarketplaceImportMetadataPath(skillDir: string): string {
+  return path.join(skillDir, MARKETPLACE_IMPORT_METADATA_FILE);
 }
 
 /**
@@ -91,10 +102,36 @@ function copyMarketplaceDirSync(src: string, dest: string, isRoot = true): void 
 function countFilesRecursive(dir: string): number {
   let count = 0;
   for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+    if (entry.name === MARKETPLACE_IMPORT_METADATA_FILE) continue;
     const entryPath = path.join(dir, entry.name);
     count += entry.isDirectory() ? countFilesRecursive(entryPath) : 1;
   }
   return count;
+}
+
+function readMarketplaceSkillVersion(sourceDir: string): string {
+  const skillJsonPath = path.join(sourceDir, 'skill.json');
+  if (!fs.existsSync(skillJsonPath)) return '';
+
+  try {
+    const raw = JSON.parse(fs.readFileSync(skillJsonPath, 'utf-8')) as MarketplaceSkillMetadata;
+    return typeof raw.version === 'string' ? raw.version.trim() : '';
+  } catch {
+    return '';
+  }
+}
+
+function extractSkillVersion(content: string): string {
+  const frontmatterMatch = content.match(/^---\n([\s\S]*?)\n---/);
+  if (frontmatterMatch) {
+    const versionMatch = frontmatterMatch[1].match(/^version:\s*(.+)$/m);
+    if (versionMatch) {
+      return versionMatch[1].trim();
+    }
+  }
+
+  const inlineVersionMatch = content.match(/\bv\d+\.\d+\.\d+\b/);
+  return inlineVersionMatch ? inlineVersionMatch[0].trim() : '';
 }
 
 function sanitizeSkillName(skillName: string): string {
@@ -172,8 +209,19 @@ export function importMarketplaceSkillGroupFromDir(
 
   const destinationDir = path.join(skillsRoot, safeGroupName);
   const updated = fs.existsSync(destinationDir);
+  const marketplaceVersion = readMarketplaceSkillVersion(sourceDir);
   fs.mkdirSync(destinationDir, { recursive: true });
   copyMarketplaceDirSync(sourceDir, destinationDir);
+
+  const metadata: MarketplaceImportMetadata = {
+    slug: safeGroupName,
+    version: marketplaceVersion,
+    importedAt: new Date().toISOString(),
+  };
+  fs.writeFileSync(
+    getMarketplaceImportMetadataPath(destinationDir),
+    JSON.stringify(metadata, null, 2),
+  );
 
   return {
     name: safeGroupName,
@@ -305,18 +353,53 @@ export function getSkillMetadata(
 
   const content = fs.readFileSync(skillMdPath, 'utf-8');
   const match = content.match(/^---\n([\s\S]*?)\n---/);
-  if (!match) return null;
+
+  const marketplaceMeta = getMarketplaceImportMetadata(skillName);
+  if (!match) {
+    return {
+      name: skillName,
+      description: '',
+      version: extractSkillVersion(content) || marketplaceMeta?.version || '',
+    };
+  }
 
   const frontmatter = match[1];
   const nameMatch = frontmatter.match(/^name:\s*(.+)$/m);
   const descMatch = frontmatter.match(/^description:\s*\|?\s*\n?([\s\S]*?)$/m);
-  const versionMatch = frontmatter.match(/^version:\s*(.+)$/m);
 
   return {
     name: nameMatch ? nameMatch[1].trim() : skillName,
     description: descMatch
       ? descMatch[1].trim().replace(/\n\s*/g, ' ')
       : '',
-    version: versionMatch ? versionMatch[1].trim() : '',
+    version: extractSkillVersion(content) || marketplaceMeta?.version || '',
   };
+}
+
+export function getMarketplaceImportMetadata(
+  skillName: string,
+  skillsRoot = getSkillsRoot(),
+): MarketplaceImportMetadata | null {
+  const metadataPath = getMarketplaceImportMetadataPath(path.join(skillsRoot, skillName));
+  if (!fs.existsSync(metadataPath)) return null;
+
+  try {
+    const parsed = JSON.parse(fs.readFileSync(metadataPath, 'utf-8')) as Partial<MarketplaceImportMetadata>;
+    if (typeof parsed.slug !== 'string' || !parsed.slug.trim()) return null;
+    return {
+      slug: parsed.slug.trim(),
+      version: typeof parsed.version === 'string' ? parsed.version.trim() : '',
+      importedAt: typeof parsed.importedAt === 'string' ? parsed.importedAt : '',
+    };
+  } catch {
+    return null;
+  }
+}
+
+export function isMarketplaceImportedSkill(
+  skillName: string,
+  skillsRoot = getSkillsRoot(),
+): boolean {
+  if (getMarketplaceImportMetadata(skillName, skillsRoot)) return true;
+  return fs.existsSync(path.join(skillsRoot, skillName, 'group.json'));
 }

@@ -5,7 +5,10 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  getMarketplaceImportMetadata,
+  getSkillMetadata,
   importMarketplaceSkillGroupFromDir,
+  isMarketplaceImportedSkill,
   listMarketplaceSkillGroups,
 } from './skills-sync.js';
 
@@ -92,11 +95,11 @@ describe('skills-sync marketplace helpers', () => {
     const sourceDir = path.join(tempDir, 'marketplace', 'scientist');
     fs.mkdirSync(path.join(sourceDir, 'scientific-demo'), { recursive: true });
     fs.mkdirSync(path.join(sourceDir, 'source'), { recursive: true });
-    fs.writeFileSync(path.join(sourceDir, 'SKILL.md'), '# Marketplace Scientist');
+    fs.writeFileSync(path.join(sourceDir, 'SKILL.md'), '## Verification Loop (v0.2.0)');
     fs.writeFileSync(path.join(sourceDir, 'group.json'), '{"name":"Scientist"}');
     fs.writeFileSync(path.join(sourceDir, 'README.md'), 'package readme');
     fs.writeFileSync(path.join(sourceDir, 'main.py'), 'print("wrapper")');
-    fs.writeFileSync(path.join(sourceDir, 'skill.json'), '{"entrypoint":"main.py"}');
+    fs.writeFileSync(path.join(sourceDir, 'skill.json'), '{"entrypoint":"main.py","version":"v0.2.0"}');
     fs.writeFileSync(path.join(sourceDir, 'source', 'SKILL.md'), '# Package source');
     fs.writeFileSync(path.join(sourceDir, 'scientific-demo', 'SKILL.md'), '# Subskill');
 
@@ -110,6 +113,17 @@ describe('skills-sync marketplace helpers', () => {
     expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'main.py'))).toBe(false);
     expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'skill.json'))).toBe(false);
     expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'source'))).toBe(false);
+    expect(getMarketplaceImportMetadata('scientist')).toEqual({
+      slug: 'scientist',
+      version: 'v0.2.0',
+      importedAt: expect.any(String),
+    });
+    expect(isMarketplaceImportedSkill('scientist')).toBe(true);
+    expect(getSkillMetadata('scientist')).toEqual({
+      name: 'scientist',
+      description: '',
+      version: 'v0.2.0',
+    });
 
     fs.mkdirSync(path.join(tempDir, 'skills', 'scientist', 'prompts'), { recursive: true });
     fs.writeFileSync(path.join(tempDir, 'skills', 'scientist', 'prompts', 'local.md'), 'keep me');

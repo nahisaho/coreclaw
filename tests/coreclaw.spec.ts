@@ -495,6 +495,109 @@ test.describe('Settings', () => {
     await expect(skills).toContainText('Version 1.2.3');
   });
 
+  test('shows marketplace update controls for imported skills', async ({ page }) => {
+    await page.route('**/api/skills', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            name: 'scientist',
+            description: 'Research pack',
+            version: 'v1.2.3',
+            fileCount: 196,
+            marketplaceImported: true,
+            marketplaceSlug: 'scientist',
+            latestVersion: 'v1.2.4',
+            updateAvailable: true,
+          },
+        ]),
+      });
+    });
+    await page.route('**/api/skills/marketplace', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+    });
+
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("Skills")');
+
+    const skills = page.locator('#skillList');
+    await expect(skills).toContainText('Version v1.2.3');
+    await expect(skills).toContainText('Update available: v1.2.4');
+    await expect(skills.locator('button:has-text("Check Update")')).toBeVisible();
+    await expect(page.locator('#skillList').getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
+  });
+
+  test('checks marketplace update status for imported skills', async ({ page }) => {
+    let skillCalls = 0;
+    await page.route('**/api/skills', async (route) => {
+      skillCalls += 1;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            name: 'scientist',
+            description: 'Research pack',
+            version: 'v1.2.3',
+            fileCount: 196,
+            marketplaceImported: true,
+            marketplaceSlug: 'scientist',
+            latestVersion: skillCalls === 1 ? '' : 'v1.2.4',
+            updateAvailable: skillCalls > 1,
+          },
+        ]),
+      });
+    });
+    await page.route('**/api/skills/marketplace', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            slug: 'scientist',
+            name: 'Scientist',
+            description: 'Research pack',
+            icon: '🔬',
+            version: 'v1.2.4',
+            count: 196,
+            installed: true,
+          },
+        ]),
+      });
+    });
+    await page.route('**/api/skills/scientist/marketplace-status', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          name: 'scientist',
+          marketplaceImported: true,
+          marketplaceSlug: 'scientist',
+          currentVersion: 'v1.2.3',
+          latestVersion: 'v1.2.4',
+          updateAvailable: true,
+        }),
+      });
+    });
+
+    page.on('dialog', (dialog) => dialog.accept());
+
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("Skills")');
+    await page.locator('#skillList button:has-text("Check Update")').click();
+
+    const skills = page.locator('#skillList');
+    await expect(skills).toContainText('Update available: v1.2.4');
+    await expect(page.locator('#skillList').getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
+  });
+
   test('MCP servers persist via settings save/reload', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');

@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.39] - 2026-03-28
+
+### Added
+
+- **Imported marketplace skill updates**: Skills imported from Marketplace now show a local version in Settings → Skills, can check for Marketplace updates, and expose an update button when a newer Marketplace version is available.
+
 ## [0.1.38] - 2026-03-28
 
 ### Added
