@@ -40,10 +40,10 @@ cp .env.example .env
 echo "GITHUB_TOKEN=${GH_TOKEN}" > .env
 grep -v '^GITHUB_TOKEN=' .env.example | grep -v '^#\s*CONTAINER_TIMEOUT' | grep -v '^#\s*IDLE_TIMEOUT' >> .env
 echo "CONTAINER_TIMEOUT=3600000" >> .env
-echo "IDLE_TIMEOUT=3600000" >> .env
+echo "IDLE_TIMEOUT=300000" >> .env
 echo "   GitHub token: set via gh CLI"
 echo "   CONTAINER_TIMEOUT: 3600000 ms (1 hour)"
-echo "   IDLE_TIMEOUT:       3600000 ms (1 hour)"
+echo "   IDLE_TIMEOUT:       300000 ms (5 min)"
 echo ""
 
 # --- 3. TypeScript ビルド ---

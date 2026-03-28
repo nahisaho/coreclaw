@@ -53,7 +53,7 @@ export const CREDENTIAL_PROXY_PORT = parseInt(
 );
 export const IPC_POLL_INTERVAL = 1000;
 export const IDLE_TIMEOUT = parseInt(
-  process.env.IDLE_TIMEOUT || envConfig.IDLE_TIMEOUT || '3600000',
+  process.env.IDLE_TIMEOUT || envConfig.IDLE_TIMEOUT || '300000',
   10,
 );
 export const MAX_CONCURRENT_CONTAINERS = Math.max(

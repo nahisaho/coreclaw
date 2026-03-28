@@ -867,19 +867,16 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 
 /* Streaming message */
 .message.streaming .msg-role { display: flex; align-items: center; gap: 8px; }
-.streaming-history-btn,
 .streaming-activity-btn,
 .streaming-stop-btn {
   background: var(--red); color: #fff; border: none; border-radius: 4px;
   padding: 1px 8px; font-size: 11px; cursor: pointer; opacity: 0.85;
 }
-.streaming-history-btn,
 .streaming-activity-btn {
   background: var(--bg-hover);
   color: var(--text-secondary);
   border: 1px solid var(--border);
 }
-.streaming-history-btn:hover,
 .streaming-activity-btn:hover {
   opacity: 1;
   color: var(--text-primary);
@@ -997,7 +994,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 
 /* Artifacts modal */
 .modal.artifacts-modal { min-width: 500px; max-width: 600px; max-height: 70vh; display: flex; flex-direction: column; }
-.modal.process-history-modal { min-width: 540px; max-width: 720px; max-height: 75vh; display: flex; flex-direction: column; }
 .modal.activity-log-modal { min-width: 620px; max-width: 860px; max-height: 78vh; display: flex; flex-direction: column; }
 .process-history-summary {
   font-size: 12px;
@@ -1072,6 +1068,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   line-height: 1.5;
   word-break: break-word;
 }
+.activity-log-filename {
+  margin-top: 6px;
+  font-size: 12px;
+  font-weight: 600;
+  color: #58a6ff;
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
 .activity-log-meta {
   display: flex;
   gap: 12px;
@@ -1090,98 +1094,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
-}
-.process-history-list {
-  flex: 1;
-  overflow-y: auto;
-  max-height: 52vh;
-}
-.process-history-empty {
-  text-align: center;
-  color: var(--text-muted);
-  padding: 28px;
-  font-size: 13px;
-}
-.process-history-item {
-  border: 1px solid var(--border);
-  background: var(--bg-tertiary);
-  border-radius: 8px;
-  padding: 10px 12px;
-  margin-bottom: 8px;
-}
-.process-history-head {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-  margin-bottom: 6px;
-  flex-wrap: wrap;
-}
-.process-history-status {
-  display: inline-flex;
-  align-items: center;
-  border-radius: 999px;
-  padding: 2px 8px;
-  font-size: 11px;
-  font-weight: 600;
-  border: 1px solid var(--border);
-  background: var(--bg-secondary);
-}
-.process-history-status.running { color: var(--accent); border-color: var(--accent); background: var(--bg-active); }
-.process-history-status.done { color: var(--green); border-color: var(--green); }
-.process-history-status.error { color: var(--red); border-color: var(--red); }
-.process-history-status.cancelled { color: var(--orange); border-color: var(--orange); }
-.process-history-time {
-  font-size: 11px;
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  margin-left: auto;
-}
-.process-history-prompt {
-  font-size: 13px;
-  color: var(--text-primary);
-  line-height: 1.5;
-  margin-bottom: 6px;
-  word-break: break-word;
-}
-.process-history-meta {
-  display: flex;
-  gap: 12px;
-  flex-wrap: wrap;
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-.process-history-last-status {
-  margin-top: 6px;
-  font-size: 11px;
-  color: var(--text-muted);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-.process-history-timeline {
-  margin-top: 8px;
-  padding-top: 8px;
-  border-top: 1px solid var(--border);
-  display: flex;
-  flex-direction: column;
-  gap: 6px;
-}
-.process-history-timeline-item {
-  display: flex;
-  gap: 8px;
-  align-items: flex-start;
-  font-size: 11px;
-  color: var(--text-secondary);
-}
-.process-history-timeline-time {
-  color: var(--text-muted);
-  font-family: var(--font-mono);
-  white-space: nowrap;
-}
-.process-history-timeline-text {
-  color: var(--text-primary);
-  line-height: 1.45;
-  word-break: break-word;
 }
 .artifacts-list {
   flex: 1; overflow-y: auto; max-height: 50vh;
@@ -1907,42 +1819,27 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   </div>
 </div>
 
-<!-- ===== Process History Modal ===== -->
-<div class="modal-overlay" id="processHistoryModal" onclick="if(event.target===this)closeModal('processHistoryModal')">
-  <div class="modal process-history-modal">
-    <div class="modal-header">
-      <h3>🕘 Process History</h3>
-      <button class="modal-close" onclick="closeModal('processHistoryModal')" title="Close">✕</button>
-    </div>
-    <div class="process-history-summary" id="processHistorySummary"></div>
-    <div class="process-history-list" id="processHistoryList"></div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal('processHistoryModal')">Close</button>
-    </div>
-  </div>
-</div>
-
 <div class="modal-overlay" id="activityLogModal" onclick="if(event.target===this)closeModal('activityLogModal')">
   <div class="modal activity-log-modal">
     <div class="modal-header">
-      <h3>📋 Activity Log</h3>
+      <h3>📋 Activity</h3>
       <button class="modal-close" onclick="closeModal('activityLogModal')" title="Close">✕</button>
     </div>
     <div class="process-history-summary" id="activityLogSummary"></div>
     <div class="activity-log-toolbar">
       <select id="activityLogFilter" class="input-field activity-log-filter" onchange="renderActivityLogModal()">
-        <option value="all">All activities</option>
-        <option value="task">Tasks</option>
-        <option value="tool">Tools</option>
-        <option value="command">Commands</option>
-        <option value="file">Files</option>
-        <option value="model">Models</option>
-        <option value="system">System</option>
+        <option value="all">すべてのアクティビティ</option>
+        <option value="task">タスク</option>
+        <option value="tool">ツール</option>
+        <option value="command">コマンド</option>
+        <option value="file">ファイル</option>
+        <option value="model">モデル</option>
+        <option value="system">システム</option>
       </select>
       <select id="activityLogTaskFilter" class="input-field activity-log-filter" onchange="renderActivityLogModal()">
-        <option value="all">All tasks</option>
+        <option value="all">すべてのタスク</option>
       </select>
-      <input id="activityLogSearch" class="input-field activity-log-search" type="text" placeholder="Search message, path, command, tool..." oninput="renderActivityLogModal()" />
+      <input id="activityLogSearch" class="input-field activity-log-search" type="text" placeholder="メッセージ、パス、コマンド、ツール名で検索..." oninput="renderActivityLogModal()" />
     </div>
     <div class="activity-log-list" id="activityLogList"></div>
     <div class="modal-actions">
@@ -2119,9 +2016,6 @@ function connectWs() {
     // Global task list updates
     if (data.type === 'tasks') {
       activeTaskList = data.tasks;
-      if (document.getElementById('processHistoryModal')?.classList.contains('visible')) {
-        renderProcessHistoryModal();
-      }
       if (document.getElementById('activityLogModal')?.classList.contains('visible')) {
         renderActivityLogModal();
       }
@@ -3042,7 +2936,7 @@ function showStatusPanel(taskId) {
   el.id = elId;
   el.className = 'message assistant streaming';
   el.innerHTML =
-    '<div class="msg-role">CoreClaw <button class="streaming-history-btn" onclick="showProcessHistoryModal()">🕘 History</button><button class="streaming-activity-btn" onclick="showActivityLogModal()">📋 Activity</button><button class="streaming-stop-btn" onclick="stopTask(\'' + (taskId || '') + '\')">⏹ Stop</button></div>' +
+    '<div class="msg-role">CoreClaw <button class="streaming-activity-btn" onclick="showActivityLogModal()">📋 Activity</button><button class="streaming-stop-btn" onclick="stopTask(\'' + (taskId || '') + '\')">⏹ Stop</button></div>' +
     '<div class="agent-status-panel" id="asp-' + sid + '">' +
       '<div class="asp-progress"><div class="asp-progress-fill indeterminate" id="asp-fill-' + sid + '"></div></div>' +
       '<div class="asp-body">' +
@@ -3093,78 +2987,6 @@ function getProcessHistoryItems() {
   });
 }
 
-function formatProcessStatus(status) {
-  const map = {
-    running: { label: 'Running', icon: '🔄' },
-    done: { label: 'Done', icon: '✅' },
-    error: { label: 'Error', icon: '❌' },
-    cancelled: { label: 'Cancelled', icon: '🛑' },
-  };
-  return map[status] || { label: status || 'Unknown', icon: '•' };
-}
-
-function formatProcessDuration(startedAt, finishedAt) {
-  const start = startedAt ? new Date(startedAt).getTime() : 0;
-  if (!start) return '—';
-  const end = finishedAt ? new Date(finishedAt).getTime() : Date.now();
-  const seconds = Math.max(0, Math.floor((end - start) / 1000));
-  return seconds < 60 ? seconds + 's' : Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
-}
-
-function renderProcessHistoryModal() {
-  const list = document.getElementById('processHistoryList');
-  const summary = document.getElementById('processHistorySummary');
-  if (!list || !summary) return;
-
-  const tasks = getProcessHistoryItems();
-  const runningCount = tasks.filter(task => task.status === 'running').length;
-  summary.textContent = tasks.length
-    ? `${tasks.length} process${tasks.length === 1 ? '' : 'es'} in this chat${runningCount ? ` • ${runningCount} running` : ''}`
-    : 'No running processes in this chat.';
-
-  if (!tasks.length) {
-    list.innerHTML = '<div class="process-history-empty">No running processes yet.</div>';
-    return;
-  }
-
-  list.innerHTML = tasks.map(task => {
-    const status = formatProcessStatus(task.status);
-    const started = task.startedAt ? new Date(task.startedAt).toLocaleString('ja-JP') : '—';
-    const finished = task.finishedAt ? new Date(task.finishedAt).toLocaleString('ja-JP') : '—';
-    const duration = formatProcessDuration(task.startedAt, task.finishedAt);
-    const prompt = esc(task.prompt || 'Running task');
-    const statusHistory = Array.isArray(task._statusHistory) ? task._statusHistory : [];
-    const timeline = statusHistory.length
-      ? `<div class="process-history-timeline">${statusHistory.map(item => {
-        const time = item.timestamp ? new Date(item.timestamp).toLocaleTimeString('ja-JP') : '—';
-        const text = formatFriendlyStatus(item.message) || item.message;
-        return `<div class="process-history-timeline-item"><span class="process-history-timeline-time">${esc(time)}</span><span class="process-history-timeline-text">${esc(text)}</span></div>`;
-      }).join('')}</div>`
-      : '';
-    const lastStatus = task._lastStatus ? `<div class="process-history-last-status">${esc(task._lastStatus)}</div>` : '';
-    return `<div class="process-history-item">
-      <div class="process-history-head">
-        <span class="process-history-status ${esc(task.status || 'unknown')}">${status.icon} ${status.label}</span>
-        <span class="process-history-time">${esc(duration)}</span>
-      </div>
-      <div class="process-history-prompt">${prompt}</div>
-      <div class="process-history-meta">
-        <span>Started: ${esc(started)}</span>
-        <span>Finished: ${esc(finished)}</span>
-        <span>ID: ${esc(task.id || '-')}</span>
-      </div>
-      ${timeline}
-      ${lastStatus}
-    </div>`;
-  }).join('');
-}
-
-async function showProcessHistoryModal() {
-  await loadProcessHistory();
-  renderProcessHistoryModal();
-  document.getElementById('processHistoryModal').classList.add('visible');
-}
-
 function getActivityLogItems() {
   const filter = document.getElementById('activityLogFilter')?.value || 'all';
   const taskFilter = document.getElementById('activityLogTaskFilter')?.value || 'all';
@@ -3200,6 +3022,19 @@ function inferActivityCategoryFromStatus(message) {
   return 'system';
 }
 
+function extractFilePathFromStatusMessage(message) {
+  const text = String(message || '');
+  const match = text.match(/^(?:Reading file|Creating file|Creating directory|Updating file|Created file|Modified file|Deleted file|Listing directory):\s+(.+)$/i);
+  return match ? match[1] : '';
+}
+
+function getPathLeaf(filepath) {
+  const value = String(filepath || '').trim().replace(/[\\/]+$/, '');
+  if (!value) return '';
+  const parts = value.split(/[\\/]/);
+  return parts[parts.length - 1] || value;
+}
+
 function getProcessHistoryActivityFallbackItems() {
   const mergedEvents = mergeActivityEvents(persistedActivityEvents, liveActivityEvents);
   const existingMessagesByTask = new Map();
@@ -3230,6 +3065,7 @@ function getProcessHistoryActivityFallbackItems() {
         action: 'status_history',
         message: rawMessage,
         raw: rawMessage,
+        filePath: extractFilePathFromStatusMessage(rawMessage),
         status: task.status,
       });
     }
@@ -3254,7 +3090,7 @@ function syncActivityTaskFilterOptions(items) {
     .filter(Boolean))]
     .sort((left, right) => String(right).localeCompare(String(left)));
 
-  select.innerHTML = '<option value="all">All tasks</option>'
+  select.innerHTML = '<option value="all">すべてのタスク</option>'
     + taskIds.map(taskId => `<option value="${esc(taskId)}">${esc(taskId)}</option>`).join('');
 
   select.value = taskIds.includes(previousValue) ? previousValue : 'all';
@@ -3262,14 +3098,52 @@ function syncActivityTaskFilterOptions(items) {
 
 function formatActivityBadge(category) {
   const map = {
-    task: 'Task',
-    tool: 'Tool',
-    command: 'Command',
-    file: 'File',
-    model: 'Model',
-    system: 'System',
+    task: 'タスク',
+    tool: 'ツール',
+    command: 'コマンド',
+    file: 'ファイル',
+    model: 'モデル',
+    system: 'システム',
   };
-  return map[category] || (category || 'Activity');
+  return map[category] || (category || 'アクティビティ');
+}
+
+function formatActivityDisplayMessage(item) {
+  const baseMessage = formatFriendlyStatus(item.message) || item.message || '';
+  if (item.category !== 'file') return baseMessage;
+  const filePath = item.filePath || extractFilePathFromStatusMessage(item.message);
+  const fileName = getPathLeaf(filePath);
+  if (!fileName) return baseMessage;
+
+  const actionLabels = {
+    read: 'ファイルを読込',
+    create: 'ファイルを作成',
+    mkdir: 'ディレクトリを作成',
+    update: 'ファイルを更新',
+    created: 'ファイルを作成済み',
+    modified: 'ファイルを更新済み',
+    deleted: 'ファイルを削除',
+    list: 'ディレクトリ一覧を取得',
+  };
+  const prefix = actionLabels[item.action] || baseMessage.split(':')[0] || 'ファイル操作';
+  return `${prefix}: ${fileName}`;
+}
+
+function formatActivityRawDetail(item, displayMessage) {
+  if (!item?.raw) return '';
+
+  const rawItem = {
+    ...item,
+    message: item.raw,
+  };
+  const localizedRaw = item.category === 'file'
+    ? formatActivityDisplayMessage(rawItem)
+    : (formatFriendlyStatus(item.raw) || item.raw || '');
+  const normalizedDisplay = String(displayMessage || '').trim();
+  const normalizedRaw = String(localizedRaw || '').trim();
+
+  if (!normalizedRaw || normalizedRaw === normalizedDisplay) return '';
+  return localizedRaw;
 }
 
 function renderActivityLogModal() {
@@ -3283,23 +3157,27 @@ function renderActivityLogModal() {
   const items = getActivityLogItems();
   const totalTasks = new Set(allItems.map(item => item.taskId).filter(Boolean)).size;
   summary.textContent = allItems.length
-    ? `${items.length}/${allItems.length} activities shown${totalTasks ? ` • ${totalTasks} tasks` : ''}`
-    : 'No activities recorded yet.';
+    ? `${items.length}/${allItems.length} 件を表示中${totalTasks ? ` • ${totalTasks} タスク` : ''}`
+    : 'まだ Activity はありません。';
 
   if (!items.length) {
-    list.innerHTML = '<div class="activity-log-empty">No activity events match the current filters.</div>';
+    list.innerHTML = '<div class="activity-log-empty">現在のフィルタに一致する Activity はありません。</div>';
     return;
   }
 
   list.innerHTML = items.map(item => {
     const time = item.timestamp ? new Date(item.timestamp).toLocaleString('ja-JP') : '—';
-    const message = formatFriendlyStatus(item.message) || item.message;
+    const message = formatActivityDisplayMessage(item);
+    const rawDetail = formatActivityRawDetail(item, message);
+    const filePath = item.filePath || extractFilePathFromStatusMessage(item.message);
+    const fileName = getPathLeaf(filePath);
     const meta = [
-      item.taskId ? `Task: ${item.taskId}` : '',
-      item.toolName ? `Tool: ${item.toolName}` : '',
-      item.filePath ? `Path: ${item.filePath}` : '',
-      item.command ? `Command: ${item.command}` : '',
-      item.status ? `Status: ${item.status}` : '',
+      item.taskId ? `タスク: ${item.taskId}` : '',
+      item.toolName ? `ツール: ${item.toolName}` : '',
+      fileName ? `ファイル: ${fileName}` : '',
+      filePath && filePath !== fileName ? `パス: ${filePath}` : '',
+      item.command ? `コマンド: ${item.command}` : '',
+      item.status ? `状態: ${item.status}` : '',
     ].filter(Boolean);
     return `<div class="activity-log-item">
       <div class="activity-log-head">
@@ -3307,8 +3185,9 @@ function renderActivityLogModal() {
         <span class="activity-log-time">${esc(time)}</span>
       </div>
       <div class="activity-log-message">${esc(message)}</div>
+      ${fileName ? `<div class="activity-log-filename">${esc(fileName)}</div>` : ''}
       ${meta.length ? `<div class="activity-log-meta">${meta.map(part => `<span>${esc(part)}</span>`).join('')}</div>` : ''}
-      ${item.raw && item.raw !== item.message ? `<div class="activity-log-raw">${esc(item.raw)}</div>` : ''}
+      ${rawDetail ? `<div class="activity-log-raw">${esc(rawDetail)}</div>` : ''}
     </div>`;
   }).join('');
 }

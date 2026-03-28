@@ -974,69 +974,25 @@ test.describe('Chat Flow', () => {
       await expect(chips.nth(3)).toHaveClass(/active/);
     });
 
-    test('streaming status exposes process history modal for current chat', async ({ page }) => {
+    test('streaming status exposes activity and stop actions only', async ({ page }) => {
       await page.goto('/');
 
-      await createExperiment(page, 'Process History Test');
+      await createExperiment(page, 'Activity Button Test');
 
-      const currentExperimentId = await page.evaluate(() => currentExpId);
-
-      await page.route('**/api/experiments/*/process-history', async (route) => {
-        await route.fulfill({
-          contentType: 'application/json',
-          body: JSON.stringify({
-            tasks: [],
-          }),
-        });
-      });
-
-      await page.evaluate(([expId]) => {
-        activeTaskList = [
-          {
-            id: 'task-running',
-            experimentId: expId,
-            prompt: '現在の実行中プロセス',
-            status: 'running',
-            startedAt: new Date(Date.now() - 15_000).toISOString(),
-            _lastStatus: 'Calling ToolUniverse-find_tools',
-          },
-          {
-            id: 'task-done',
-            experimentId: expId,
-            prompt: '完了したプロセス',
-            status: 'done',
-            startedAt: new Date(Date.now() - 60_000).toISOString(),
-            finishedAt: new Date(Date.now() - 20_000).toISOString(),
-            _lastStatus: 'Completed ToolUniverse-execute_tool',
-          },
-          {
-            id: 'task-other-exp',
-            experimentId: 'other-exp',
-            prompt: '別チャットのプロセス',
-            status: 'running',
-            startedAt: new Date(Date.now() - 5_000).toISOString(),
-            _lastStatus: 'Should stay hidden',
-          },
-        ];
+      await page.evaluate(() => {
         activeTasks['task-running'] = {
-          experimentId: expId,
+          experimentId: currentExpId,
           prompt: '',
           streamBuffer: '',
           startedAt: Date.now() - 10_000,
           _lastStatus: 'placeholder',
         };
         window.showStatusPanel('task-running');
-      }, [currentExperimentId]);
+      });
 
-      await page.locator('#streaming-msg-task-running .streaming-history-btn').click();
-
-      await expect(page.locator('#processHistoryModal')).toHaveClass(/visible/);
-      await expect(page.locator('#processHistoryList')).toContainText('現在の実行中プロセス');
-      await expect(page.locator('#processHistoryList')).not.toContainText('完了したプロセス');
-      await expect(page.locator('#processHistoryList')).not.toContainText('中断したプロセス');
-      await expect(page.locator('#processHistoryList')).not.toContainText('別チャットのプロセス');
-      await expect(page.locator('#processHistoryList')).toContainText('Running');
-      await expect(page.locator('#processHistoryList')).not.toContainText('Cancelled');
+      await expect(page.locator('#streaming-msg-task-running .streaming-activity-btn')).toBeVisible();
+      await expect(page.locator('#streaming-msg-task-running .streaming-stop-btn')).toBeVisible();
+      await expect(page.locator('#streaming-msg-task-running .streaming-history-btn')).toHaveCount(0);
     });
 
     test('activity log shows literature search entries from process history fallback', async ({ page }) => {
@@ -1086,6 +1042,55 @@ test.describe('Chat Flow', () => {
 
       await expect(page.locator('#activityLogModal')).toHaveClass(/visible/);
       await expect(page.locator('#activityLogList')).toContainText('文献データベースを検索中');
+      await expect(page.locator('#activityLogList')).not.toContainText('Calling ToolUniverse-execute_tool');
+    });
+
+    test('activity log shows created filename for file events', async ({ page }) => {
+      await page.goto('/');
+
+      await createExperiment(page, 'Activity File Name Test');
+
+      await page.route('**/api/experiments/*/process-history', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ tasks: [] }),
+        });
+      });
+      await page.route('**/api/experiments/*/activity', async (route) => {
+        const expId = route.request().url().match(/\/api\/experiments\/([^/]+)\/activity/)?.[1] || '';
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            events: [
+              {
+                id: 'activity-file-create',
+                experimentId: expId,
+                taskId: 'task-file-create',
+                timestamp: new Date('2026-03-28T12:10:00.000Z').toISOString(),
+                category: 'file',
+                action: 'create',
+                message: 'Creating file: reports/daily-summary.md',
+                raw: 'Creating file: reports/daily-summary.md',
+                filePath: 'reports/daily-summary.md',
+              },
+            ],
+          }),
+        });
+      });
+
+      await page.evaluate(() => {
+        window.showStatusPanel('task-file-create');
+      });
+
+      await page.locator('#streaming-msg-task-file-create .streaming-activity-btn').click();
+
+      await expect(page.locator('#activityLogModal')).toHaveClass(/visible/);
+      await expect(page.locator('#activityLogList')).toContainText('ファイルを作成: daily-summary.md');
+      await expect(page.locator('#activityLogList')).toContainText('ファイル: daily-summary.md');
+      await expect(page.locator('#activityLogList')).toContainText('パス: reports/daily-summary.md');
+      await expect(page.locator('#activityLogList')).not.toContainText('Creating file: reports/daily-summary.md');
     });
 
     test('websocket event sequence updates progress panel and final message', async ({ page }) => {
