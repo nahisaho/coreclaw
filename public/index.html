@@ -2110,20 +2110,21 @@ function updateCopilotAuthStatusUi() {
   const stateLabel = getCopilotAuthStateLabel(status);
   const sidebarStateLabel = getCopilotAuthSidebarStateLabel(status);
   const sourceLabel = getCopilotAuthSourceLabel(status.source);
+  const statusMessage = typeof status.message === 'string' ? status.message : '';
 
   const sidebar = document.getElementById('sidebarAuthStatus');
   if (sidebar) {
     sidebar.dataset.state = status.state || 'checking';
     document.getElementById('sidebarAuthStatusSummary').textContent = `Copilot Auth: ${sidebarStateLabel}`;
-    document.getElementById('sidebarAuthStatusMessage').textContent = status.message || 'GitHub Copilot 認証状態を確認しています。';
-    sidebar.title = `${status.message || ''} (${sourceLabel})`.trim();
+    document.getElementById('sidebarAuthStatusMessage').textContent = statusMessage;
+    sidebar.title = [statusMessage, sourceLabel ? `(${sourceLabel})` : ''].filter(Boolean).join(' ');
   }
 
   const settingsCard = document.getElementById('settingsCopilotAuthStatus');
   if (settingsCard) {
     settingsCard.dataset.state = status.state || 'checking';
     document.getElementById('settingsCopilotAuthStatusState').textContent = stateLabel;
-    document.getElementById('settingsCopilotAuthStatusMessage').textContent = status.message || 'GitHub Copilot 認証状態を確認しています。';
+    document.getElementById('settingsCopilotAuthStatusMessage').textContent = statusMessage;
     const meta = [];
     meta.push(`取得元: ${sourceLabel}`);
     if (status.checkedAt) meta.push(`確認時刻: ${new Date(status.checkedAt).toLocaleString()}`);

@@ -170,7 +170,7 @@ export async function checkCopilotAuthStatus(): Promise<CopilotAuthStatus> {
         ok: true,
         state: 'authenticated',
         source,
-        message: 'GitHub Copilot 認証は有効です。',
+        message: '',
         checkedAt: nowIso(),
       };
     }

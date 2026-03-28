@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.53] - 2026-03-29
+
+### Fixed
+
+- **Copilot auth success message removed**: 左ペインと認証表示から `GitHub Copilot 認証は有効です。` を削除し、成功時は状態ラベルのみ表示するようにしました。
+
 ## [0.1.52] - 2026-03-29
 
 ### Changed
