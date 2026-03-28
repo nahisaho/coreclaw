@@ -12,6 +12,9 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 - **Process History timeline**: History popup now preserves and displays step-by-step runtime events such as container startup, model selection, and intermediate agent status updates instead of showing only the prompt and the latest status.
 - **Completed HISTORY output**: Completed chat runs now write a `Process` section to `groups/experiment-*/HISTORY.md` so runtime progression is retained alongside the prompt and response.
+- **Activity log detail view**: Added a dedicated Activity log timeline with structured task, tool, command, file, and model events, plus live updates and filtering in the web UI.
+- **Research activity labeling**: Activity and in-progress status views now translate literature-search tool calls such as `ToolUniverse-execute_tool` and `web_search` into user-friendly research progress labels.
+- **Output language setting**: Settings now include an `Output Language` selector so final agent responses can be requested in either Japanese or English.
 
 ## [0.1.45] - 2026-03-28
 
