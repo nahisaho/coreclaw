@@ -235,9 +235,10 @@ async function getMarketplaceSkillStatus(
   const skillDir = path.resolve(process.cwd(), 'skills', skillName);
   const localMeta = getSkillMetadata(skillName);
   const importMeta = getMarketplaceImportMetadata(skillName);
-  const currentVersion = localMeta?.version || importMeta?.version || '';
-
   let marketplaceImported = isMarketplaceImportedSkill(skillName);
+  const currentVersion = marketplaceImported
+    ? (importMeta?.version || localMeta?.version || '')
+    : (localMeta?.version || importMeta?.version || '');
   let latestVersion = '';
   let marketplaceSlug = importMeta?.slug || skillName;
 
@@ -1337,7 +1338,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return {
         name,
         description: meta?.description || '',
-        version: meta?.version || marketplaceStatus.currentVersion || '',
+        version: marketplaceStatus.marketplaceImported
+          ? (marketplaceStatus.currentVersion || meta?.version || '')
+          : (meta?.version || marketplaceStatus.currentVersion || ''),
         fileCount,
         marketplaceImported: marketplaceStatus.marketplaceImported,
         marketplaceSlug: marketplaceStatus.marketplaceSlug,

@@ -1,3 +1,6 @@
+import fs from 'fs';
+import path from 'path';
+
 import { test, expect } from '@playwright/test';
 
 // ============================================================
@@ -1245,6 +1248,31 @@ test.describe('REST API', () => {
     expect(createdSkill).toHaveProperty('version');
 
     await request.delete(`/api/skills/${skillName}`);
+  });
+
+  test('GET /api/skills prefers marketplace import version for imported skills', async ({ request }) => {
+    const skillName = `marketplace-version-${Date.now()}`;
+    const skillDir = path.join(process.cwd(), 'skills', skillName);
+
+    fs.mkdirSync(skillDir, { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `---\nname: ${skillName}\nversion: v1.0.0\n---\n\n# ${skillName}\n`);
+    fs.writeFileSync(path.join(skillDir, '.coreclaw-marketplace.json'), JSON.stringify({
+      slug: skillName,
+      version: 'v1.1.0',
+      importedAt: new Date().toISOString(),
+    }, null, 2));
+
+    try {
+      const res = await request.get('/api/skills');
+      expect(res.ok()).toBeTruthy();
+      const body = await res.json();
+      const importedSkill = body.find((skill: { name?: string }) => skill.name === skillName);
+      expect(importedSkill).toBeTruthy();
+      expect(importedSkill.marketplaceImported).toBe(true);
+      expect(importedSkill.version).toBe('v1.1.0');
+    } finally {
+      fs.rmSync(skillDir, { recursive: true, force: true });
+    }
   });
 
   test('PUT /api/settings saves and GET returns masked tokens', async ({ request }) => {
