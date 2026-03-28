@@ -1644,6 +1644,17 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
             <button class="theme-btn active" id="themeDark" onclick="setTheme('dark')">🌙 Dark</button>
           </div>
         </div>
+        <div class="settings-section">
+          <h4>🗣 Output Language</h4>
+          <div class="settings-field">
+            <label><span class="field-icon">🌐</span> Language</label>
+            <select id="settingsOutputLanguage">
+              <option value="ja">日本語</option>
+              <option value="en">English</option>
+            </select>
+            <div class="field-hint">エージェントの最終回答の出力言語を指定します</div>
+          </div>
+        </div>
       </div>
 
       <!-- Tab: Authentication -->
@@ -3262,10 +3273,15 @@ function humanizeToolName(toolName) {
     'report_intent': '方針整理',
     'find_tools': 'ツール選定',
     'execute_tool': '文献検索',
+    'web_search': 'Web検索',
     'github-mcp-server': 'GitHub',
     'ToolUniverse': 'ToolUniverse',
   };
   return labelMap[normalized] || normalized;
+}
+
+function isLiteratureSearchText(text) {
+  return /paper|papers|literature|publication|publications|pubmed|openalex|semantic scholar|crossref|arxiv|europepmc|seminal|landmark|academic|論文|文献|査読|研究/i.test(String(text || ''));
 }
 
 function humanizeStatusSummary(summary) {
@@ -3276,6 +3292,7 @@ function humanizeStatusSummary(summary) {
     [/^Searching literature tools$/i, '文献検索の進め方を整理中'],
     [/^Finding literature search tools$/i, '利用できる文献検索手段を確認中'],
     [/^Searching CRISPR base editing papers$/i, 'CRISPR base editing 関連論文を検索中'],
+    [/^CRISPR base editing landmark representative papers seminal publications$/i, 'CRISPR base editing 関連論文を検索中'],
     [/^OpenAlex literature search academic papers$/i, 'OpenAlex で学術論文を検索中'],
     [/^academic literature search OpenAlex papers$/i, 'OpenAlex で学術論文を検索中'],
   ];
@@ -3390,10 +3407,23 @@ function formatFriendlyStatus(line) {
     return summary ? '📚 ' + summary : '📚 文献データベースを検索中...';
   }
 
+  match = line.match(/^Calling\s+web_search(?::\s*(.+))?$/i);
+  if (match) {
+    const rawSummary = match[1] || '';
+    const summary = humanizeStatusSummary(rawSummary);
+    if (summary) return '📚 ' + summary;
+    return isLiteratureSearchText(rawSummary)
+      ? '📚 文献データベースを検索中...'
+      : '🌐 Web検索を実行中...';
+  }
+
   match = line.match(/^Calling\s+(.+?)(?::\s*(.+))?$/i);
   if (match) {
     const toolLabel = humanizeToolName(match[1]);
     const summary = humanizeStatusSummary(match[2]);
+    if (summary && isLiteratureSearchText(summary)) {
+      return '📚 ' + summary;
+    }
     return summary ? '🔧 ' + toolLabel + ' を実行中: ' + summary : '🔧 ' + toolLabel + ' を実行中...';
   }
 
@@ -5066,6 +5096,7 @@ async function showSettings() {
     document.getElementById('settingsGithubToken').value = settings.github_token || '';
     document.getElementById('settingsCopilotModel').value = settings.copilot_model || '';
     document.getElementById('settingsGithubMcpTools').value = settings.github_mcp_tools || '';
+    document.getElementById('settingsOutputLanguage').value = settings.output_language || 'ja';
     document.getElementById('settingsOpenaiKey').value = settings.openai_api_key || '';
     document.getElementById('settingsAzureKey').value = settings.azure_openai_api_key || '';
     document.getElementById('settingsAzureEndpoint').value = settings.azure_openai_endpoint || '';
@@ -5093,6 +5124,7 @@ async function saveSettings() {
     github_token: document.getElementById('settingsGithubToken').value.trim(),
     copilot_model: document.getElementById('settingsCopilotModel').value,
     github_mcp_tools: document.getElementById('settingsGithubMcpTools').value,
+    output_language: document.getElementById('settingsOutputLanguage').value || 'ja',
     ai_provider: provider,
     openai_api_key: document.getElementById('settingsOpenaiKey').value.trim(),
     azure_openai_api_key: document.getElementById('settingsAzureKey').value.trim(),

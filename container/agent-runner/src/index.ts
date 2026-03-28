@@ -149,6 +149,8 @@ function summarizeToolStart(toolName: string, args: Record<string, unknown>): st
   const filePath = typeof args.filePath === 'string' ? args.filePath.trim() : '';
   const dirPath = typeof args.dirPath === 'string' ? args.dirPath.trim() : '';
   const query = typeof args.query === 'string' ? args.query.trim() : '';
+  const description = typeof args.description === 'string' ? args.description.trim() : '';
+  const intent = typeof args.intent === 'string' ? args.intent.trim() : '';
   const includePattern = typeof args.includePattern === 'string' ? args.includePattern.trim() : '';
   const input = typeof args.input === 'string' ? args.input : '';
 
@@ -196,10 +198,18 @@ function summarizeToolStart(toolName: string, args: Record<string, unknown>): st
       break;
     }
     default:
+      {
+        const summary = command || query || description || intent;
+        details.push(summary ? `Calling ${toolName}: ${truncateForLog(summary)}` : `Calling ${toolName}`);
+      }
       if (filePath) details.push(`Target file: ${filePath}`);
       if (dirPath) details.push(`Target directory: ${dirPath}`);
-      if (command) details.push(`Command detail: ${truncateForLog(command, 220)}`);
-      if (query) details.push(`Query detail: ${truncateForLog(query)}`);
+      if (command && command !== (command || query || description || intent)) {
+        details.push(`Command detail: ${truncateForLog(command, 220)}`);
+      }
+      if (query && query !== (command || query || description || intent)) {
+        details.push(`Query detail: ${truncateForLog(query)}`);
+      }
       break;
   }
 

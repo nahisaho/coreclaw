@@ -73,6 +73,7 @@ const SETTINGS_KEYS = [
   'github_token',
   'copilot_model',
   'github_mcp_tools',
+  'output_language',
   'ai_provider',
   'openai_api_key',
   'azure_openai_api_key',
@@ -133,6 +134,18 @@ function sanitizeSettingsMap(settings: Record<string, unknown>): SettingsMap {
         : String(value ?? '');
   }
   return sanitized;
+}
+
+function buildOutputLanguageInstruction(outputLanguage: string): string {
+  switch ((outputLanguage || '').trim().toLowerCase()) {
+    case 'en':
+    case 'english':
+      return 'Respond in English for the final answer unless the user explicitly requests another language.';
+    case 'ja':
+    case 'japanese':
+    default:
+      return 'Respond in Japanese for the final answer unless the user explicitly requests another language.';
+  }
 }
 
 function settingsPath(): string {
@@ -1716,7 +1729,9 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
       // Remove the last entry if it is the message we just saved (same id)
       const historyForContext = recentHistory.filter(m => m.id !== userMsg.id);
       const memoryCtx = buildMemoryContext(data.experimentId, historyForContext);
-      const augmentedPrompt = memoryCtx ? memoryCtx + data.content : data.content;
+      const languageInstruction = buildOutputLanguageInstruction(settings.output_language || 'ja');
+      const basePrompt = memoryCtx ? memoryCtx + data.content : data.content;
+      const augmentedPrompt = `${basePrompt}\n\n[Output Language]\n${languageInstruction}`;
 
       // Create task for parallel tracking
       const taskId = generateTaskId();

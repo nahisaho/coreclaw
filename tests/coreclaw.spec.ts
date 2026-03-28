@@ -262,6 +262,8 @@ test.describe('Settings', () => {
     await page.goto('/');
     await page.click('.settings-btn');
 
+    await page.selectOption('#settingsOutputLanguage', 'en');
+
     // Switch to GitHub tab
     await page.click('button:has-text("GitHub")');
     await page.fill('#settingsGithubUser', 'test-user');
@@ -272,6 +274,7 @@ test.describe('Settings', () => {
 
     // Reopen settings — values should persist
     await page.click('.settings-btn');
+    await expect(page.locator('#settingsOutputLanguage')).toHaveValue('en');
     await expect(page.locator('#settingsGithubUser')).toHaveValue('test-user');
   });
 
@@ -870,6 +873,7 @@ test.describe('Chat Flow', () => {
         ['Calling report_intent: Searching literature tools', '🧭 文献検索の進め方を整理中'],
         ['Calling ToolUniverse-find_tools: OpenAlex literature search academic papers', '🔎 OpenAlex で学術論文を検索中'],
         ['Calling ToolUniverse-execute_tool', '📚 文献データベースを検索中...'],
+        ['Calling web_search: CRISPR base editing landmark representative papers seminal publications', '📚 CRISPR base editing 関連論文を検索中'],
         ['Completed tool', '✅ ツール実行が完了しました'],
         ['Completed ToolUniverse-execute_tool', '✅ 文献検索 が完了しました'],
       ] as const;
@@ -1222,12 +1226,25 @@ test.describe('REST API', () => {
     await request.delete(`/api/experiments/${body.id}`);
   });
 
-  test('GET /api/skills returns skills', async ({ request }) => {
+  test('GET /api/skills returns created skills', async ({ request }) => {
+    const skillName = `api-skill-${Date.now()}`;
+
+    const createRes = await request.post('/api/skills', {
+      data: {
+        name: skillName,
+        description: 'Temporary API test skill',
+      },
+    });
+    expect(createRes.ok()).toBeTruthy();
+
     const res = await request.get('/api/skills');
     expect(res.ok()).toBeTruthy();
     const body = await res.json();
-    expect(body.length).toBeGreaterThanOrEqual(1);
-    expect(body[0]).toHaveProperty('version');
+    const createdSkill = body.find((skill: { name?: string }) => skill.name === skillName);
+    expect(createdSkill).toBeTruthy();
+    expect(createdSkill).toHaveProperty('version');
+
+    await request.delete(`/api/skills/${skillName}`);
   });
 
   test('PUT /api/settings saves and GET returns masked tokens', async ({ request }) => {
@@ -1238,6 +1255,7 @@ test.describe('REST API', () => {
     const res = await request.put('/api/settings', {
       data: {
         github_token: 'ghp_testtoken123456',
+        output_language: 'en',
         ai_provider: 'ollama',
         ollama_url: 'http://localhost:11434',
         ollama_model: 'llama3.3',
@@ -1247,6 +1265,7 @@ test.describe('REST API', () => {
 
     const getRes = await request.get('/api/settings');
     const settings = await getRes.json();
+    expect(settings.output_language).toBe('en');
     expect(settings.ai_provider).toBe('ollama');
     expect(settings.ollama_url).toBe('http://localhost:11434');
     expect(settings.ollama_model).toBe('llama3.3');
@@ -1258,6 +1277,7 @@ test.describe('REST API', () => {
     await request.put('/api/settings', {
       data: {
         github_token: '',
+        output_language: origSettings.output_language || 'ja',
         ai_provider: origSettings.ai_provider || '',
         ollama_url: origSettings.ollama_url || '',
         ollama_model: origSettings.ollama_model || '',
