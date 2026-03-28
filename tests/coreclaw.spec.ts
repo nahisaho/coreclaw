@@ -195,11 +195,40 @@ test.describe('Settings', () => {
       });
     });
 
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('confirm');
+      await dialog.accept();
+    });
+
     await page.goto('/');
     await page.locator('#stopServerBtn').click();
 
     await expect(page.locator('#stopServerBtn')).toHaveText('✅');
     expect(shutdownRequested).toBe(true);
+  });
+
+  test('stop button does not request shutdown when cancelled', async ({ page }) => {
+    let shutdownRequested = false;
+
+    await page.route('**/api/shutdown', async (route) => {
+      shutdownRequested = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, message: 'Shutting down CoreClaw' }),
+      });
+    });
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('confirm');
+      await dialog.dismiss();
+    });
+
+    await page.goto('/');
+    await page.locator('#stopServerBtn').click();
+
+    await expect(page.locator('#stopServerBtn')).toHaveText('🔴');
+    expect(shutdownRequested).toBe(false);
   });
 
   test('provider toggle switches between OpenAI / Azure / Ollama', async ({ page }) => {

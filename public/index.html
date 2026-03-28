@@ -4382,6 +4382,9 @@ async function stopWebServer() {
   const btn = document.getElementById('stopServerBtn');
   if (!btn || btn.disabled) return;
 
+    const confirmed = confirm('CoreClaw を shutdown しますか？');
+    if (!confirmed) return;
+
   const originalText = btn.textContent;
   btn.textContent = '⏳';
   btn.disabled = true;
