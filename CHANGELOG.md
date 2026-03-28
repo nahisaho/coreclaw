@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.43] - 2026-03-28
+
+### Changed
+
+- **SIGHUP restart flow**: CoreClaw self-update now requests restart with `kill -HUP` and then runs the existing graceful drain-and-reexec path from that signal.
+- **Emoji stop control**: The sidebar stop control next to Settings now uses emoji-only button states instead of text.
+
 ## [0.1.42] - 2026-03-28
 
 ### Added

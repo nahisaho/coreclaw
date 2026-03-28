@@ -200,14 +200,6 @@ function isVersionNewer(candidate: string, current: string): boolean {
   return false;
 }
 
-async function getMarketplaceSkillStatus(skillName: string): Promise<{
-  marketplaceImported: boolean;
-  marketplaceSlug: string;
-  currentVersion: string;
-  latestVersion: string;
-  updateAvailable: boolean;
-}>
-
 async function getMarketplaceSkillStatus(
   skillName: string,
   marketplaceGroups?: Awaited<ReturnType<typeof listMarketplaceSkillGroups>>,
@@ -1068,9 +1060,11 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       return;
     }
 
+    const shutdown = appShutdown;
+
     res.once('finish', () => {
       setTimeout(() => {
-        void appShutdown('api-shutdown').catch((err) => {
+        void shutdown('api-shutdown').catch((err) => {
           logger.error({ err }, 'App shutdown callback failed');
         });
       }, 50);
@@ -1798,8 +1792,8 @@ async function updateComponent(component: string): Promise<{ ok: boolean; messag
         // Code already up to date but server needs restart
         if (local === remote && diskPkg.version !== RUNNING_VERSION) {
           setTimeout(() => {
-            logger.info('Restarting server to apply pending update...');
-            restartProcess();
+            logger.info('Sending SIGHUP to restart server for pending update...');
+            requestProcessRestart('pending-coreclaw-update');
           }, 1500);
           return { ok: true, message: `Restarting to apply v${diskPkg.version}...`, version: diskPkg.version, restart: true };
         }
@@ -1857,8 +1851,8 @@ async function updateComponent(component: string): Promise<{ ok: boolean; messag
         const rebuildMsg = containerRebuilt ? ' Container image rebuilt.' : '';
         // Schedule server restart after response is sent
         setTimeout(() => {
-          logger.info('Restarting server after CoreClaw update...');
-          restartProcess();
+          logger.info('Sending SIGHUP to restart server after CoreClaw update...');
+          requestProcessRestart('coreclaw-update');
         }, 1500);
         return { ok: true, message: `CoreClaw updated to v${pkg.version}.${rebuildMsg} Restarting server...`, version: pkg.version, restart: true };
       }
@@ -1893,12 +1887,14 @@ async function updateComponent(component: string): Promise<{ ok: boolean; messag
 
 export const WEB_PORT = parseInt(process.env.CORECLAW_WEB_PORT || process.env.WEB_PORT || '3000', 10);
 
-// Reference to the active HTTP server — used by restartProcess() to drain
+// Reference to the active HTTP server — used by performProcessRestart() to drain
 // connections before spawning the replacement process.
 let activeHttpServer: import('http').Server | null = null;
+let restartInProgress = false;
+let restartSignalArmed = false;
 
 /**
- * Gracefully restart the current process:
+ * Gracefully restart the current process after a restart signal is received:
  *   1. Close the HTTP server so the OS releases the port.
  *   2. Spawn a new child with identical argv + env (port numbers propagated).
  *   3. Exit the current process.
@@ -1906,7 +1902,10 @@ let activeHttpServer: import('http').Server | null = null;
  * A 3-second hard-timeout forces exit if connections do not drain in time,
  * preventing the new process from hitting EADDRINUSE.
  */
-function restartProcess(): void {
+function performProcessRestart(): void {
+  if (restartInProgress) return;
+  restartInProgress = true;
+
   const env: NodeJS.ProcessEnv = {
     ...process.env,
     CORECLAW_WEB_PORT: String(WEB_PORT),
@@ -1933,6 +1932,28 @@ function restartProcess(): void {
     });
   } else {
     doSpawn();
+  }
+}
+
+function requestProcessRestart(reason: string): void {
+  if (restartInProgress || restartSignalArmed) return;
+
+  restartSignalArmed = true;
+  const onRestartSignal = () => {
+    restartSignalArmed = false;
+    logger.info({ reason, pid: process.pid }, 'Received SIGHUP restart signal');
+    performProcessRestart();
+  };
+
+  process.once('SIGHUP', onRestartSignal);
+
+  try {
+    logger.info({ reason, pid: process.pid }, 'Sending SIGHUP to request process restart');
+    process.kill(process.pid, 'SIGHUP');
+  } catch (err) {
+    restartSignalArmed = false;
+    process.removeListener('SIGHUP', onRestartSignal);
+    throw err;
   }
 }
 

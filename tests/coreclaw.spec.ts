@@ -198,7 +198,7 @@ test.describe('Settings', () => {
     await page.goto('/');
     await page.locator('#stopServerBtn').click();
 
-    await expect(page.locator('#stopServerBtn')).toHaveText('Stopped');
+    await expect(page.locator('#stopServerBtn')).toHaveText('✅');
     expect(shutdownRequested).toBe(true);
   });
 
