@@ -32,6 +32,40 @@ interface ContainerOutput {
   error?: string;
 }
 
+function detectCopilotAuthFailure(text: string): string | null {
+  const normalized = text
+    .replace(/\u001b\[[0-9;]*m/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+
+  if (!normalized) return null;
+
+  if (
+    /no authentication token found/i.test(normalized)
+    || /no github token found/i.test(normalized)
+    || /authentication is not configured/i.test(normalized)
+    || /please .*auth.*login/i.test(normalized)
+    || /not logged in/i.test(normalized)
+    || /login required/i.test(normalized)
+  ) {
+    return 'GitHub Copilot authentication is not configured. Set a valid GitHub token in Settings.';
+  }
+
+  if (
+    /bad credentials/i.test(normalized)
+    || /invalid token/i.test(normalized)
+    || /authentication failed/i.test(normalized)
+    || /failed to authenticate/i.test(normalized)
+    || /token .* expired/i.test(normalized)
+    || /401[^\n]*(token|auth|credential|unauthorized)/i.test(normalized)
+    || /(token|credential|auth)[^\n]*invalid/i.test(normalized)
+  ) {
+    return 'GitHub Copilot authentication failed. The configured GitHub token is invalid or expired. Update it in Settings.';
+  }
+
+  return null;
+}
+
 interface WorkspaceSnapshotEntry {
   size: number;
   mtimeMs: number;
@@ -323,7 +357,7 @@ function waitForIpcMessage(): Promise<string | null> {
 async function runCopilotQuery(
   prompt: string,
   containerInput: ContainerInput,
-): Promise<{ output: string; exitCode: number; workspaceChanges: string[] }> {
+): Promise<{ output: string; stderr: string; exitCode: number; workspaceChanges: string[] }> {
   return new Promise((resolve, reject) => {
     const args: string[] = [
       '-p', prompt,
@@ -371,7 +405,15 @@ async function runCopilotQuery(
     const env: Record<string, string> = { ...process.env as Record<string, string> };
     // Copilot CLI authenticates via GITHUB_TOKEN or COPILOT_GITHUB_TOKEN
     if (!env.GITHUB_TOKEN && !env.COPILOT_GITHUB_TOKEN && !env.GH_TOKEN) {
-      log('WARNING: No authentication token found');
+      const errorMessage = 'GitHub Copilot authentication is not configured. Set a valid GitHub token in Settings.';
+      log(errorMessage);
+      resolve({
+        output: '',
+        stderr: errorMessage,
+        exitCode: 1,
+        workspaceChanges: [],
+      });
+      return;
     }
 
     const copilot = spawn('copilot', args, {
@@ -524,6 +566,7 @@ async function runCopilotQuery(
       const afterSnapshot = snapshotWorkspace(cwd);
       resolve({
         output: finalAssistantMessage || accumulatedAssistantText.trim() || stdout.trim(),
+        stderr,
         exitCode: code ?? 1,
         workspaceChanges: diffWorkspaceSnapshots(beforeSnapshot, afterSnapshot),
       });
@@ -592,10 +635,22 @@ async function main(): Promise<void> {
     while (true) {
       log(`Starting query (session: ${sessionId})...`);
 
-      const { output, exitCode, workspaceChanges } = await runCopilotQuery(
+      const { output, stderr, exitCode, workspaceChanges } = await runCopilotQuery(
         prompt,
         containerInput,
       );
+
+      const authError = detectCopilotAuthFailure([stderr, output].filter(Boolean).join('\n'));
+      if (authError) {
+        log(authError);
+        writeOutput({
+          status: 'error',
+          result: output || null,
+          newSessionId: sessionId,
+          error: authError,
+        });
+        break;
+      }
 
       for (const message of workspaceChanges) {
         log(message);

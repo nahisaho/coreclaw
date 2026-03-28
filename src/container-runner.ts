@@ -28,6 +28,7 @@ import {
 import { validateAdditionalMounts } from './mount-security.js';
 import { syncSkillsToGroup } from './skills-sync.js';
 import { readEnvFile } from './env.js';
+import { resolveGitHubToken } from './github-auth.js';
 import { RegisteredGroup } from './types.js';
 
 // Sentinel markers for robust output parsing (must match agent-runner)
@@ -265,26 +266,16 @@ function buildContainerArgs(
   args.push('-e', `TZ=${TIMEZONE}`);
 
   // Pass GitHub token for Copilot CLI authentication
-  // Try settings.json first, then .env, then process.env, then `gh auth token`
-  let githubToken = '';
+  // Try settings.json first, then environment, then `gh auth token`
+  const { token: githubToken } = resolveGitHubToken();
   let copilotModel = '';
   try {
     const settingsPath = path.join(DATA_DIR, 'settings.json');
     if (fs.existsSync(settingsPath)) {
       const settings = JSON.parse(fs.readFileSync(settingsPath, 'utf-8'));
-      githubToken = settings.github_token || '';
       copilotModel = settings.copilot_model || '';
     }
   } catch { /* ignore */ }
-  if (!githubToken) {
-    const envSecrets = readEnvFile(['GITHUB_TOKEN', 'GH_TOKEN', 'COPILOT_GITHUB_TOKEN']);
-    githubToken = envSecrets.GITHUB_TOKEN || envSecrets.GH_TOKEN || envSecrets.COPILOT_GITHUB_TOKEN || '';
-  }
-  if (!githubToken) {
-    try {
-      githubToken = execSync('gh auth token 2>/dev/null', { encoding: 'utf-8', timeout: 5000 }).trim();
-    } catch { /* gh not available */ }
-  }
   if (githubToken) {
     args.push('-e', `GITHUB_TOKEN=${githubToken}`);
   } else {
@@ -418,6 +409,7 @@ export async function runContainerAgent(
     // Streaming output: parse OUTPUT_START/END marker pairs
     let parseBuffer = '';
     let newSessionId: string | undefined;
+    let streamedError: string | undefined;
     let outputChain = Promise.resolve();
 
     container.stdout.on('data', (data) => {
@@ -449,6 +441,9 @@ export async function runContainerAgent(
             const parsed: ContainerOutput = JSON.parse(jsonStr);
             if (parsed.newSessionId) {
               newSessionId = parsed.newSessionId;
+            }
+            if (parsed.status === 'error') {
+              streamedError = parsed.error || (typeof parsed.result === 'string' ? parsed.result : undefined);
             }
             hadStreamingOutput = true;
             resetTimeout();
@@ -551,6 +546,19 @@ export async function runContainerAgent(
 
       if (hadStreamingOutput) {
         outputChain.then(() => {
+          if (streamedError) {
+            resolve({ status: 'error', result: null, newSessionId, error: streamedError });
+            return;
+          }
+          if (code !== 0) {
+            resolve({
+              status: 'error',
+              result: null,
+              newSessionId,
+              error: `Container exited with code ${code}`,
+            });
+            return;
+          }
           resolve({ status: 'success', result: null, newSessionId });
         });
         return;

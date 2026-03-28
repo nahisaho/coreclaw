@@ -219,6 +219,31 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .sidebar-footer-top {
   display: flex; align-items: center; justify-content: space-between;
 }
+.sidebar-auth-status {
+  margin-top: 10px;
+  padding: 8px 10px;
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  background: var(--bg-tertiary);
+}
+.sidebar-auth-status[data-state="authenticated"] {
+  border-color: color-mix(in srgb, var(--green) 45%, var(--border));
+}
+.sidebar-auth-status[data-state="invalid"],
+.sidebar-auth-status[data-state="missing"],
+.sidebar-auth-status[data-state="unauthorized"],
+.sidebar-auth-status[data-state="error"] {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+}
+.sidebar-auth-status-summary {
+  color: var(--text-primary);
+  font-weight: 600;
+}
+.sidebar-auth-status-message {
+  margin-top: 4px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
 .sidebar-footer-actions {
   display: flex; align-items: center; gap: 8px;
 }
@@ -252,6 +277,43 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   justify-content: center; transition: all .15s; line-height: 1;
 }
 .modal-close:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--text-muted); }
+
+.settings-auth-status {
+  margin-bottom: 16px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--bg-tertiary);
+}
+.settings-auth-status[data-state="authenticated"] {
+  border-color: color-mix(in srgb, var(--green) 45%, var(--border));
+}
+.settings-auth-status[data-state="invalid"],
+.settings-auth-status[data-state="missing"],
+.settings-auth-status[data-state="unauthorized"],
+.settings-auth-status[data-state="error"] {
+  border-color: color-mix(in srgb, var(--red) 45%, var(--border));
+}
+.settings-auth-status-title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+.settings-auth-status-state {
+  margin-top: 6px;
+  font-size: 14px;
+  color: var(--text-primary);
+}
+.settings-auth-status-message,
+.settings-auth-status-meta {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+.settings-auth-status-actions {
+  margin-top: 10px;
+}
 
 /* Settings tabs */
 .settings-tabs {
@@ -1370,6 +1432,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
           <button class="stop-btn" id="stopServerBtn" onclick="stopWebServer()" title="Stop web server">🔴</button>
         </div>
       </div>
+      <div class="sidebar-auth-status" id="sidebarAuthStatus" data-state="checking">
+        <div class="sidebar-auth-status-summary" id="sidebarAuthStatusSummary">Copilot認証: 確認中</div>
+        <div class="sidebar-auth-status-message" id="sidebarAuthStatusMessage">GitHub Copilot 認証状態を確認しています。</div>
+      </div>
     </div>
   </aside>
 
@@ -1572,6 +1638,15 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <!-- Tab: Authentication -->
       <div class="settings-tab-content" id="settingsTab-auth">
         <div class="settings-section">
+          <div class="settings-auth-status" id="settingsCopilotAuthStatus" data-state="checking">
+            <div class="settings-auth-status-title">Copilot 認証状態</div>
+            <div class="settings-auth-status-state" id="settingsCopilotAuthStatusState">確認中</div>
+            <div class="settings-auth-status-message" id="settingsCopilotAuthStatusMessage">GitHub Copilot 認証状態を確認しています。</div>
+            <div class="settings-auth-status-meta" id="settingsCopilotAuthStatusMeta"></div>
+            <div class="settings-auth-status-actions">
+              <button class="btn-cancel" type="button" onclick="refreshCopilotAuthStatus(true)">再確認</button>
+            </div>
+          </div>
           <div class="settings-field">
             <label><span class="field-icon">🐙</span> GitHub Token</label>
             <input type="password" id="settingsGithubToken" placeholder="ghp_xxxxxxxxxxxx">
@@ -1860,6 +1935,88 @@ let persistedActivityEvents = [];
 let liveActivityEvents = [];
 let currentMemory = null;   // current memory state for the active experiment
 let pendingTaskContexts = [];
+let copilotAuthStatus = {
+  ok: false,
+  state: 'checking',
+  source: 'none',
+  message: 'GitHub Copilot 認証状態を確認しています。',
+};
+
+function getCopilotAuthStateLabel(status) {
+  switch (status.state) {
+    case 'authenticated': return '有効';
+    case 'missing': return '未設定';
+    case 'invalid': return '無効';
+    case 'unauthorized': return '要確認';
+    case 'error': return '確認失敗';
+    default: return '確認中';
+  }
+}
+
+function getCopilotAuthSourceLabel(source) {
+  switch (source) {
+    case 'settings': return 'Settings';
+    case 'env': return '環境変数';
+    case 'gh': return 'gh auth';
+    default: return '未検出';
+  }
+}
+
+function updateCopilotAuthStatusUi() {
+  const status = copilotAuthStatus || {
+    ok: false,
+    state: 'checking',
+    source: 'none',
+    message: 'GitHub Copilot 認証状態を確認しています。',
+  };
+  const stateLabel = getCopilotAuthStateLabel(status);
+  const sourceLabel = getCopilotAuthSourceLabel(status.source);
+
+  const sidebar = document.getElementById('sidebarAuthStatus');
+  if (sidebar) {
+    sidebar.dataset.state = status.state || 'checking';
+    document.getElementById('sidebarAuthStatusSummary').textContent = `Copilot認証: ${stateLabel}`;
+    document.getElementById('sidebarAuthStatusMessage').textContent = status.message || 'GitHub Copilot 認証状態を確認しています。';
+    sidebar.title = `${status.message || ''} (${sourceLabel})`.trim();
+  }
+
+  const settingsCard = document.getElementById('settingsCopilotAuthStatus');
+  if (settingsCard) {
+    settingsCard.dataset.state = status.state || 'checking';
+    document.getElementById('settingsCopilotAuthStatusState').textContent = stateLabel;
+    document.getElementById('settingsCopilotAuthStatusMessage').textContent = status.message || 'GitHub Copilot 認証状態を確認しています。';
+    const meta = [];
+    meta.push(`取得元: ${sourceLabel}`);
+    if (status.checkedAt) meta.push(`確認時刻: ${new Date(status.checkedAt).toLocaleString()}`);
+    if (status.detail) meta.push(`詳細: ${status.detail}`);
+    document.getElementById('settingsCopilotAuthStatusMeta').textContent = meta.join(' / ');
+  }
+}
+
+async function refreshCopilotAuthStatus(force = false) {
+  if (force) {
+    copilotAuthStatus = {
+      ok: false,
+      state: 'checking',
+      source: 'none',
+      message: 'GitHub Copilot 認証状態を確認しています。',
+    };
+    updateCopilotAuthStatusUi();
+  }
+  try {
+    const query = force ? '?refresh=1' : '';
+    copilotAuthStatus = await api('/auth/copilot-status' + query);
+  } catch (err) {
+    copilotAuthStatus = {
+      ok: false,
+      state: 'error',
+      source: 'none',
+      message: 'GitHub 認証状態の取得に失敗しました。',
+      detail: err.message || String(err),
+    };
+  }
+  updateCopilotAuthStatusUi();
+}
 
 function mergeActivityEvents(baseEvents, overlayEvents) {
   const byId = new Map();
@@ -5059,8 +5216,10 @@ async function showSettings() {
     renderMcpServers();
   }
   document.getElementById('settingsSaved').classList.remove('visible');
+  updateCopilotAuthStatusUi();
   document.getElementById('settingsModal').classList.add('visible');
   loadComponentVersions();
+  void refreshCopilotAuthStatus(true);
 }
 
 async function saveSettings() {
@@ -5084,6 +5243,7 @@ async function saveSettings() {
     method: 'PUT',
     body: JSON.stringify(settings),
   });
+  void refreshCopilotAuthStatus(true);
   closeModal('settingsModal');
 }
 
@@ -5197,6 +5357,8 @@ async function init() {
     });
   }
   connectWs();
+  updateCopilotAuthStatusUi();
+  void refreshCopilotAuthStatus();
   await loadExperiments();
 
   // Load skills

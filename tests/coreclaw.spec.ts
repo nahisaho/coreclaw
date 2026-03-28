@@ -281,6 +281,34 @@ test.describe('Settings', () => {
     await expect(page.locator('#settingsGithubUser')).toHaveValue('test-user');
   });
 
+  test('shows Copilot auth precheck status in sidebar and settings', async ({ page }) => {
+    await page.route('**/api/auth/copilot-status**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: false,
+          state: 'invalid',
+          source: 'settings',
+          message: 'GitHub Copilot 認証に失敗しました。GitHub Token が無効または期限切れです。',
+          checkedAt: new Date('2025-01-01T00:00:00Z').toISOString(),
+        }),
+      });
+    });
+
+    await page.goto('/');
+
+    await expect(page.locator('#sidebarAuthStatus')).toContainText('Copilot認証: 無効');
+    await expect(page.locator('#sidebarAuthStatus')).toContainText('GitHub Token が無効または期限切れです。');
+
+    await page.click('.settings-btn');
+    await page.click('button:has-text("Authentication")');
+
+    await expect(page.locator('#settingsCopilotAuthStatus')).toContainText('無効');
+    await expect(page.locator('#settingsCopilotAuthStatus')).toContainText('GitHub Token が無効または期限切れです。');
+    await expect(page.locator('#settingsCopilotAuthStatus')).toContainText('取得元: Settings');
+  });
+
   test('add MCP server manually', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');

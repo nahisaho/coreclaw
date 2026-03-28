@@ -62,8 +62,66 @@ import { syncExperiment, pullExperiment } from './github-sync.js';
 import { execSync, spawn, spawnSync } from 'child_process';
 import { classifyUpdaterDirtyFiles, parseDirtyTrackedFiles } from './update-utils.js';
 import { createDeflateRaw, inflateRawSync } from 'zlib';
+import { checkCopilotAuthStatus, type CopilotAuthStatus } from './github-auth.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const COPILOT_AUTH_STATUS_TTL_MS = 60_000;
+
+let cachedCopilotAuthStatus: CopilotAuthStatus = {
+  ok: false,
+  state: 'checking',
+  source: 'none',
+  message: 'GitHub Copilot 認証状態を確認中です。',
+  checkedAt: new Date(0).toISOString(),
+};
+let copilotAuthStatusCheckedAt = 0;
+let copilotAuthStatusPromise: Promise<CopilotAuthStatus> | null = null;
+
+async function getCachedCopilotAuthStatus(force = false): Promise<CopilotAuthStatus> {
+  const now = Date.now();
+  if (
+    !force
+    && copilotAuthStatusCheckedAt > 0
+    && now - copilotAuthStatusCheckedAt < COPILOT_AUTH_STATUS_TTL_MS
+    && cachedCopilotAuthStatus.state !== 'checking'
+  ) {
+    return cachedCopilotAuthStatus;
+  }
+
+  if (copilotAuthStatusPromise) {
+    return copilotAuthStatusPromise;
+  }
+
+  copilotAuthStatusPromise = checkCopilotAuthStatus()
+    .then((status) => {
+      cachedCopilotAuthStatus = status;
+      copilotAuthStatusCheckedAt = Date.now();
+      if (status.ok) {
+        logger.info({ source: status.source }, 'Copilot auth precheck succeeded');
+      } else {
+        logger.warn({ state: status.state, source: status.source, detail: status.detail }, status.message);
+      }
+      return status;
+    })
+    .catch((err) => {
+      cachedCopilotAuthStatus = {
+        ok: false,
+        state: 'error',
+        source: 'none',
+        message: 'GitHub 認証状態の確認に失敗しました。',
+        detail: err instanceof Error ? err.message : String(err),
+        checkedAt: new Date().toISOString(),
+      };
+      copilotAuthStatusCheckedAt = Date.now();
+      logger.warn({ err }, 'Copilot auth precheck failed');
+      return cachedCopilotAuthStatus;
+    })
+    .finally(() => {
+      copilotAuthStatusPromise = null;
+    });
+
+  return copilotAuthStatusPromise;
+}
 
 // ---------------------------------------------------------------------------
 // Settings persistence (stored in data/settings.json, outside project root)
@@ -1268,6 +1326,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     return;
   }
 
+  // GET /api/auth/copilot-status — get cached or refreshed Copilot auth status
+  if (method === 'GET' && pathname === '/api/auth/copilot-status') {
+    const refresh = url.searchParams.get('refresh') === '1';
+    const status = await getCachedCopilotAuthStatus(refresh);
+    sendJson(res, 200, status);
+    return;
+  }
+
   // POST /api/check/:component — check if update is available
   const checkMatch = pathname.match(/^\/api\/check\/(.+)$/);
   if (method === 'POST' && checkMatch) {
@@ -1672,6 +1738,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     }
 
     saveSettings(updated);
+    void getCachedCopilotAuthStatus(true);
     sendJson(res, 200, { ok: true });
     return;
   }
@@ -2332,6 +2399,7 @@ export function startWebServer(port = WEB_PORT): Promise<void> {
     server.listen(port, () => {
       activeHttpServer = server;
       logger.info({ port }, 'Web server started — http://localhost:' + port);
+      void getCachedCopilotAuthStatus(true);
       resolve();
     });
   });
