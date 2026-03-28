@@ -1,3 +1,4 @@
+import { ChildProcess, exec } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 
@@ -26,6 +27,7 @@ import {
   cleanupOrphans,
   ensureContainerRuntimeRunning,
   PROXY_BIND_HOST,
+  stopContainer,
 } from './container-runtime.js';
 import {
   getAllChats,
@@ -73,6 +75,54 @@ let messageLoopRunning = false;
 
 const channels: Channel[] = [];
 const queue = new GroupQueue();
+
+interface WebTaskProcess {
+  experimentId: string;
+  groupFolder: string;
+  proc: ChildProcess | null;
+  containerName: string | null;
+  stopRequested: boolean;
+  killTimer?: NodeJS.Timeout;
+}
+
+const activeWebTaskProcesses = new Map<string, WebTaskProcess>();
+
+function requestWebTaskStop(taskId: string): void {
+  const run = activeWebTaskProcesses.get(taskId);
+  if (!run) return;
+
+  run.stopRequested = true;
+
+  const sentinelPath = path.join(DATA_DIR, 'ipc', run.groupFolder, 'input', '_close');
+  try {
+    fs.mkdirSync(path.dirname(sentinelPath), { recursive: true });
+    fs.writeFileSync(sentinelPath, '');
+  } catch {
+    /* ignore */
+  }
+
+  if (run.containerName) {
+    exec(stopContainer(run.containerName), { timeout: 15000 }, (err) => {
+      if (err) {
+        logger.warn({ taskId, experimentId: run.experimentId, containerName: run.containerName, err }, 'Failed to stop web task container cleanly');
+        if (run.proc && run.proc.exitCode === null && !run.proc.killed) {
+          run.proc.kill('SIGKILL');
+        }
+      }
+    });
+  }
+
+  if (run.proc && run.proc.exitCode === null && !run.proc.killed) {
+    run.proc.kill('SIGTERM');
+    if (!run.killTimer) {
+      run.killTimer = setTimeout(() => {
+        if (run.proc && run.proc.exitCode === null && !run.proc.killed) {
+          run.proc.kill('SIGKILL');
+        }
+      }, 5000);
+    }
+  }
+}
 
 function loadState(): void {
   lastTimestamp = getRouterState('last_timestamp') || '';
@@ -443,7 +493,7 @@ async function main(): Promise<void> {
   loadState();
 
   // Start web server (experiment UI)
-  setAgentRunner((experimentId, prompt, onChunk, onDone, onError, onStatus) => {
+  setAgentRunner((experimentId, taskId, prompt, onChunk, onDone, onError, onStatus) => {
     const exp = getExperiment(experimentId);
     const groupFolder = `experiment-${experimentId}`;
     const tempGroup: RegisteredGroup = {
@@ -465,6 +515,22 @@ async function main(): Promise<void> {
     let finished = false;
     let collectedText = '';
 
+    activeWebTaskProcesses.set(taskId, {
+      experimentId,
+      groupFolder,
+      proc: null,
+      containerName: null,
+      stopRequested: false,
+    });
+
+    const cleanupTaskProcess = () => {
+      const run = activeWebTaskProcesses.get(taskId);
+      if (run?.killTimer) {
+        clearTimeout(run.killTimer);
+      }
+      activeWebTaskProcesses.delete(taskId);
+    };
+
     // Helper: send close sentinel to stop container's IPC wait loop
     const closeContainer = (gf: string) => {
       const sentinelPath = path.join(DATA_DIR, 'ipc', gf, 'input', '_close');
@@ -483,7 +549,15 @@ async function main(): Promise<void> {
         isMain: false,
         assistantName: ASSISTANT_NAME,
       },
-      (proc) => {
+      (proc, containerName) => {
+        const run = activeWebTaskProcesses.get(taskId);
+        if (run) {
+          run.proc = proc;
+          run.containerName = containerName;
+          if (run.stopRequested) {
+            setImmediate(() => requestWebTaskStop(taskId));
+          }
+        }
         // Immediately notify client that the container process has spawned
         if (onStatus) {
           onStatus('__container_spawned__');
@@ -537,18 +611,16 @@ async function main(): Promise<void> {
         if (finished) return;
         finished = true;
         onError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        cleanupTaskProcess();
       });
   });
 
-  // Agent stopper: sends close sentinel to stop container
-  setAgentStopper((experimentId, _taskId) => {
-    const groupFolder = `experiment-${experimentId}`;
-    const sentinelPath = path.join(DATA_DIR, 'ipc', groupFolder, 'input', '_close');
-    try {
-      fs.mkdirSync(path.dirname(sentinelPath), { recursive: true });
-      fs.writeFileSync(sentinelPath, '');
-      logger.info({ experimentId }, 'Agent stop requested');
-    } catch { /* ignore */ }
+  // Agent stopper: terminates the specific running web task container.
+  setAgentStopper((experimentId, taskId) => {
+    requestWebTaskStop(taskId);
+    logger.info({ experimentId, taskId }, 'Agent stop requested');
   });
 
   // Memory summariser: runs a lightweight container to compress conversation history

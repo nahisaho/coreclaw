@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.50] - 2026-03-29
+
+### Fixed
+
+- **Streaming chat Stop button**: Chat response Stop now targets the exact running task container by task ID, so cancelling during an active streaming response stops the in-flight agent execution instead of waiting for the query to finish.
+
 ## [0.1.49] - 2026-03-29
 
 ### Fixed

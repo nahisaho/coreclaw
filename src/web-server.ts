@@ -525,6 +525,7 @@ function extractZip(zipBuf: Buffer): { name: string; data: Buffer }[] {
 
 type AgentRunner = (
   experimentId: string,
+  taskId: string,
   prompt: string,
   onChunk: (chunk: string) => void,
   onDone: (fullResponse: string) => void,
@@ -1977,6 +1978,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
       if (agentRunner) {
         agentRunner(
           data.experimentId,
+          taskId,
           augmentedPrompt,
           (chunk: string) => {
             if (task.status === 'cancelled') return;
