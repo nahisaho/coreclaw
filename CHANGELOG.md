@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.46] - 2026-03-28
+
+### Changed
+
+- **Process History timeline**: History popup now preserves and displays step-by-step runtime events such as container startup, model selection, and intermediate agent status updates instead of showing only the prompt and the latest status.
+- **Completed HISTORY output**: Completed chat runs now write a `Process` section to `groups/experiment-*/HISTORY.md` so runtime progression is retained alongside the prompt and response.
+
 ## [0.1.45] - 2026-03-28
 
 ### Changed

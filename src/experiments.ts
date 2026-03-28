@@ -42,6 +42,7 @@ export interface ExperimentProcessHistory {
   startedAt: string;
   finishedAt?: string;
   _lastStatus?: string;
+  _statusHistory?: { message: string; timestamp: string }[];
 }
 
 // ---------------------------------------------------------------------------
@@ -93,6 +94,7 @@ export function initExperimentsDb(database: Database.Database): void {
       started_at TEXT NOT NULL,
       finished_at TEXT,
       last_status TEXT DEFAULT '',
+      status_history TEXT DEFAULT '[]',
       FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
     );
     CREATE INDEX IF NOT EXISTS idx_exp_proc_hist_exp ON experiment_process_history(experiment_id, started_at DESC);
@@ -123,6 +125,9 @@ export function initExperimentsDb(database: Database.Database): void {
   const processHistoryCols = db.prepare("PRAGMA table_info('experiment_process_history')").all() as { name: string }[];
   if (!processHistoryCols.find(c => c.name === 'last_status')) {
     db.exec("ALTER TABLE experiment_process_history ADD COLUMN last_status TEXT DEFAULT ''");
+  }
+  if (!processHistoryCols.find(c => c.name === 'status_history')) {
+    db.exec("ALTER TABLE experiment_process_history ADD COLUMN status_history TEXT DEFAULT '[]'");
   }
 
   // Initialize memory subsystem (same DB connection)
@@ -423,15 +428,16 @@ export function deleteMessage(msgId: string): void {
 export function upsertProcessHistory(entry: ExperimentProcessHistory): void {
   getDb()
     .prepare(
-      `INSERT INTO experiment_process_history (task_id, experiment_id, prompt, status, started_at, finished_at, last_status)
-       VALUES (?, ?, ?, ?, ?, ?, ?)
+      `INSERT INTO experiment_process_history (task_id, experiment_id, prompt, status, started_at, finished_at, last_status, status_history)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(task_id) DO UPDATE SET
          experiment_id = excluded.experiment_id,
          prompt = excluded.prompt,
          status = excluded.status,
          started_at = excluded.started_at,
          finished_at = excluded.finished_at,
-         last_status = excluded.last_status`,
+         last_status = excluded.last_status,
+         status_history = excluded.status_history`,
     )
     .run(
       entry.id,
@@ -441,6 +447,7 @@ export function upsertProcessHistory(entry: ExperimentProcessHistory): void {
       entry.startedAt,
       entry.finishedAt ?? null,
       entry._lastStatus ?? '',
+      JSON.stringify(entry._statusHistory ?? []),
     );
 }
 
@@ -469,6 +476,7 @@ export function appendTerminalProcessLog(
         startedAt: entry.startedAt,
         finishedAt: entry.finishedAt ?? null,
         lastStatus: entry._lastStatus ?? '',
+        statusHistory: entry._statusHistory ?? [],
         note,
         timestamp: new Date().toISOString(),
       }) + '\n',
@@ -494,6 +502,12 @@ export function appendCompletedProcessHistory(
       : '—';
     const prompt = (entry.prompt || '').trim() || '(empty prompt)';
     const body = (response || '').trim() || '(empty response)';
+    const statusHistory = (entry._statusHistory ?? []).filter(item => item?.message && item?.timestamp);
+    const processSection = statusHistory.length
+      ? '### Process\n\n' + statusHistory
+        .map(item => `- ${new Date(item.timestamp).toLocaleString('ja-JP')}: ${item.message}`)
+        .join('\n') + '\n\n'
+      : '';
 
     fs.appendFileSync(
       historyPath,
@@ -502,6 +516,7 @@ export function appendCompletedProcessHistory(
       `- Started: ${started}\n` +
       `- Finished: ${finished}\n\n` +
       `### Prompt\n\n${prompt}\n\n` +
+      processSection +
       `### Response\n\n${body}\n\n---\n\n`,
     );
   } catch (err) {
@@ -515,7 +530,7 @@ export function listProcessHistory(
 ): ExperimentProcessHistory[] {
   const rows = getDb()
     .prepare(
-      `SELECT task_id, experiment_id, prompt, status, started_at, finished_at, last_status
+      `SELECT task_id, experiment_id, prompt, status, started_at, finished_at, last_status, status_history
        FROM experiment_process_history
        WHERE experiment_id = ? AND status = 'running'
        ORDER BY started_at DESC
@@ -529,6 +544,7 @@ export function listProcessHistory(
       started_at: string;
       finished_at: string | null;
       last_status: string | null;
+      status_history: string | null;
     }[];
 
   return rows.map((row) => ({
@@ -539,6 +555,16 @@ export function listProcessHistory(
     startedAt: row.started_at,
     finishedAt: row.finished_at ?? undefined,
     _lastStatus: row.last_status ?? '',
+    _statusHistory: (() => {
+      try {
+        const parsed = JSON.parse(row.status_history || '[]');
+        return Array.isArray(parsed)
+          ? parsed.filter(item => item && typeof item.message === 'string' && typeof item.timestamp === 'string')
+          : [];
+      } catch {
+        return [];
+      }
+    })(),
   }));
 }
 
@@ -546,7 +572,7 @@ export function drainStaleRunningProcessHistory(): number {
   const now = new Date().toISOString();
   const rows = getDb()
     .prepare(
-      `SELECT task_id, experiment_id, prompt, status, started_at, finished_at, last_status
+      `SELECT task_id, experiment_id, prompt, status, started_at, finished_at, last_status, status_history
        FROM experiment_process_history
        WHERE status = 'running'`,
     )
@@ -558,6 +584,7 @@ export function drainStaleRunningProcessHistory(): number {
       started_at: string;
       finished_at: string | null;
       last_status: string | null;
+      status_history: string | null;
     }[];
 
   for (const row of rows) {
@@ -571,6 +598,16 @@ export function drainStaleRunningProcessHistory(): number {
         startedAt: row.started_at,
         finishedAt: row.finished_at ?? now,
         _lastStatus: row.last_status || 'CoreClaw restarted before this process finished.',
+        _statusHistory: (() => {
+          try {
+            const parsed = JSON.parse(row.status_history || '[]');
+            return Array.isArray(parsed)
+              ? parsed.filter(item => item && typeof item.message === 'string' && typeof item.timestamp === 'string')
+              : [];
+          } catch {
+            return [];
+          }
+        })(),
       },
       'CoreClaw restarted before this process finished.',
     );

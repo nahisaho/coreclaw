@@ -1067,6 +1067,31 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   overflow: hidden;
   text-overflow: ellipsis;
 }
+.process-history-timeline {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.process-history-timeline-item {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.process-history-timeline-time {
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+}
+.process-history-timeline-text {
+  color: var(--text-primary);
+  line-height: 1.45;
+  word-break: break-word;
+}
 .artifacts-list {
   flex: 1; overflow-y: auto; max-height: 50vh;
 }
@@ -1806,6 +1831,17 @@ let persistedProcessHistory = [];
 let currentMemory = null;   // current memory state for the active experiment
 let pendingTaskContexts = [];
 
+function mergeStatusHistory(baseHistory, overlayHistory) {
+  const merged = [];
+  for (const item of [...(Array.isArray(baseHistory) ? baseHistory : []), ...(Array.isArray(overlayHistory) ? overlayHistory : [])]) {
+    if (!item || !item.message || !item.timestamp) continue;
+    const last = merged[merged.length - 1];
+    if (last && last.message === item.message && last.timestamp === item.timestamp) continue;
+    merged.push({ message: item.message, timestamp: item.timestamp });
+  }
+  return merged;
+}
+
 function isPlaceholderProcessPrompt(prompt) {
   return !prompt || prompt === 'Running task';
 }
@@ -1825,6 +1861,7 @@ function mergeProcessHistoryItem(baseTask, overlayTask) {
     ...overlayTask,
     prompt,
     _lastStatus: overlayTask._lastStatus || baseTask._lastStatus || '',
+    _statusHistory: mergeStatusHistory(baseTask._statusHistory, overlayTask._statusHistory),
     startedAt: overlayTask.startedAt || baseTask.startedAt,
     finishedAt: overlayTask.finishedAt || baseTask.finishedAt || null,
   };
@@ -1960,6 +1997,7 @@ function connectWs() {
             experimentId: task.experimentId,
             prompt: task.prompt || '',
             _lastStatus: task._lastStatus || '',
+            _statusHistory: Array.isArray(task._statusHistory) ? task._statusHistory : [],
             context: buildTaskContext(task.prompt || ''),
             hasDetailedStatus: false,
             syntheticTimer: null,
@@ -2019,6 +2057,7 @@ function connectWs() {
             experimentId: currentExpId,
             prompt: pendingTask.prompt || '',
             _lastStatus: '',
+            _statusHistory: [],
             context,
             hasDetailedStatus: false,
             syntheticTimer: null,
@@ -2040,7 +2079,20 @@ function connectWs() {
         break;
       case 'agent_status':
         if (data.taskId) {
-          if (activeTasks[data.taskId]) activeTasks[data.taskId]._lastStatus = data.status;
+          if (activeTasks[data.taskId]) {
+            activeTasks[data.taskId]._lastStatus = data.status;
+            if (data.status !== '__heartbeat__') {
+              const statusMessage = data.status === '__container_spawned__' ? 'Container starting' : data.status;
+              const history = Array.isArray(activeTasks[data.taskId]._statusHistory) ? activeTasks[data.taskId]._statusHistory : [];
+              const last = history[history.length - 1];
+              if (!last || last.message !== statusMessage) {
+                activeTasks[data.taskId]._statusHistory = [...history, {
+                  message: statusMessage,
+                  timestamp: new Date().toISOString(),
+                }];
+              }
+            }
+          }
           updateStatusPanelLine(data.taskId, data.status);
         }
         break;
@@ -2855,6 +2907,7 @@ function getProcessHistoryItems() {
       startedAt: typeof task.startedAt === 'number' ? new Date(task.startedAt).toISOString() : (task.startedAt || new Date().toISOString()),
       finishedAt: null,
       _lastStatus: task._lastStatus || '',
+      _statusHistory: Array.isArray(task._statusHistory) ? task._statusHistory : [],
     }));
   }
 
@@ -2905,6 +2958,14 @@ function renderProcessHistoryModal() {
     const finished = task.finishedAt ? new Date(task.finishedAt).toLocaleString('ja-JP') : '—';
     const duration = formatProcessDuration(task.startedAt, task.finishedAt);
     const prompt = esc(task.prompt || 'Running task');
+    const statusHistory = Array.isArray(task._statusHistory) ? task._statusHistory : [];
+    const timeline = statusHistory.length
+      ? `<div class="process-history-timeline">${statusHistory.map(item => {
+        const time = item.timestamp ? new Date(item.timestamp).toLocaleTimeString('ja-JP') : '—';
+        const text = formatFriendlyStatus(item.message) || item.message;
+        return `<div class="process-history-timeline-item"><span class="process-history-timeline-time">${esc(time)}</span><span class="process-history-timeline-text">${esc(text)}</span></div>`;
+      }).join('')}</div>`
+      : '';
     const lastStatus = task._lastStatus ? `<div class="process-history-last-status">${esc(task._lastStatus)}</div>` : '';
     return `<div class="process-history-item">
       <div class="process-history-head">
@@ -2917,6 +2978,7 @@ function renderProcessHistoryModal() {
         <span>Finished: ${esc(finished)}</span>
         <span>ID: ${esc(task.id || '-')}</span>
       </div>
+      ${timeline}
       ${lastStatus}
     </div>`;
   }).join('');
@@ -2972,6 +3034,10 @@ function addStatusToolChip(taskId, toolName) {
 }
 
 function formatFriendlyStatus(line) {
+  if (line === '__container_spawned__' || line === 'Container starting') {
+    return '🐳 コンテナを起動中...';
+  }
+
   let match = line.match(/^MCP\s+(.+?):\s+connected$/i);
   if (match) {
     return '🧩 ' + humanizeToolName(match[1]) + ' に接続しました';

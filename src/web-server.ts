@@ -545,6 +545,7 @@ interface ActiveTask {
   finalMessage?: { id: string; experiment_id: string; role: string; content: string; timestamp: string };  // saved when done, for replay on reconnect
   _heartbeat?: ReturnType<typeof setInterval>;  // periodic heartbeat timer
   _lastStatus?: string;  // last status line sent
+  _statusHistory?: { message: string; timestamp: string }[];
   _lastStatusAt?: number;  // timestamp of the last non-heartbeat status line
   _heartbeatSent?: boolean;
 }
@@ -565,6 +566,7 @@ function syncProcessHistory(task: ActiveTask): void {
     startedAt: task.startedAt,
     finishedAt: task.finishedAt,
     _lastStatus: task._lastStatus || '',
+    _statusHistory: task._statusHistory ?? [],
   });
 }
 
@@ -580,6 +582,7 @@ function serializeTask(task: ActiveTask): Record<string, unknown> {
     streamingText: task.streamingText,
     finalMessage: task.finalMessage,
     _lastStatus: task._lastStatus,
+    _statusHistory: task._statusHistory,
   };
 }
 
@@ -1552,6 +1555,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
         status: 'running',
         startedAt: new Date().toISOString(),
         streamingText: '',
+        _statusHistory: [],
       };
       activeTasks.set(taskId, task);
       syncProcessHistory(task);
@@ -1621,6 +1625,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               startedAt: task.startedAt,
               finishedAt: task.finishedAt,
               _lastStatus: task._lastStatus,
+              _statusHistory: task._statusHistory,
             }, fullResponse);
             syncProcessHistory(task);
             broadcastToExperiment(data.experimentId, {
@@ -1653,6 +1658,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               startedAt: task.startedAt,
               finishedAt: task.finishedAt,
               _lastStatus: task._lastStatus,
+              _statusHistory: task._statusHistory,
             }, error);
             syncProcessHistory(task);
             const errMsg = addMessage(data.experimentId, 'system', `Error: ${error}`);
@@ -1672,6 +1678,18 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
             if (task._lastStatusAt && now - task._lastStatusAt < 2000 && statusLine === 'Copilot is analyzing the task') return;
             task._lastStatus = statusLine;
             task._lastStatusAt = now;
+            if (statusLine !== '__heartbeat__') {
+              const statusMessage = statusLine === '__container_spawned__'
+                ? 'Container starting'
+                : statusLine;
+              const lastEntry = task._statusHistory?.[task._statusHistory.length - 1];
+              if (!lastEntry || lastEntry.message !== statusMessage) {
+                task._statusHistory = [...(task._statusHistory ?? []), {
+                  message: statusMessage,
+                  timestamp: new Date(now).toISOString(),
+                }];
+              }
+            }
             syncProcessHistory(task);
             broadcastToExperiment(data.experimentId, {
               type: 'agent_status',
@@ -1696,6 +1714,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
           startedAt: task.startedAt,
           finishedAt: task.finishedAt,
           _lastStatus: task._lastStatus,
+          _statusHistory: task._statusHistory,
         }, reply.content);
         syncProcessHistory(task);
         broadcastToExperiment(data.experimentId, {
@@ -1998,8 +2017,10 @@ export function restartCurrentProcess(): void {
     CREDENTIAL_PROXY_PORT: String(process.env.CREDENTIAL_PROXY_PORT || '3001'),
   };
 
+  const spawnArgs = [...process.execArgv, ...process.argv.slice(1)];
+
   const doSpawn = () => {
-    const child = spawn(process.argv[0], process.argv.slice(1), {
+    const child = spawn(process.execPath, spawnArgs, {
       env,
       stdio: 'inherit',
       detached: true,
