@@ -15,6 +15,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 - **Activity log detail view**: Added a dedicated Activity log timeline with structured task, tool, command, file, and model events, plus live updates and filtering in the web UI.
 - **Research activity labeling**: Activity and in-progress status views now translate literature-search tool calls such as `ToolUniverse-execute_tool` and `web_search` into user-friendly research progress labels.
 - **Output language setting**: Settings now include an `Output Language` selector so final agent responses can be requested in either Japanese or English.
+- **Marketplace installed version precedence**: Settings → Skills now prefers marketplace import metadata when showing the installed version of marketplace-imported skills, so the displayed version updates correctly after a marketplace update.
 
 ## [0.1.45] - 2026-03-28
 
