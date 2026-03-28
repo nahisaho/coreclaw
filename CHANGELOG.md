@@ -6,6 +6,18 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.48] - 2026-03-29
+
+### Added
+
+- **Benchmark run definitions**: Added machine-readable benchmark definitions in `tests/benchmark-prompts.json` with markdown fallback support for benchmark matching.
+- **Benchmark results viewer**: Added a `Benchmarks` modal in the web UI to inspect benchmark run status, artifact coverage, missing files, and evaluation summaries.
+
+### Changed
+
+- **Benchmark run API**: Added an experiment benchmark-runs API that serves persisted manifest, artifact check, and evaluation records.
+- **GitHub sync diagnostics export**: GitHub sync now includes experiment `logs/`, including benchmark run diagnostics, in addition to artifacts and conversation history.
+
 ## [0.1.47] - 2026-03-28
 
 ### Changed

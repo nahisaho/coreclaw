@@ -1057,6 +1057,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 /* Artifacts modal */
 .modal.artifacts-modal { min-width: 500px; max-width: 600px; max-height: 70vh; display: flex; flex-direction: column; }
 .modal.activity-log-modal { min-width: 620px; max-width: 860px; max-height: 78vh; display: flex; flex-direction: column; }
+.modal.benchmark-runs-modal { min-width: 680px; max-width: 940px; max-height: 78vh; display: flex; flex-direction: column; }
 .process-history-summary {
   font-size: 12px;
   color: var(--text-secondary);
@@ -1156,6 +1157,116 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+.benchmark-runs-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.benchmark-runs-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 58vh;
+}
+.benchmark-run-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 28px;
+  font-size: 13px;
+}
+.benchmark-run-card {
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  border-radius: 10px;
+  padding: 12px 14px;
+  margin-bottom: 10px;
+}
+.benchmark-run-head {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+.benchmark-run-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.benchmark-run-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.benchmark-run-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 700;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.benchmark-run-badge.pass { color: var(--green); border-color: var(--green); }
+.benchmark-run-badge.fail { color: var(--red); border-color: var(--red); }
+.benchmark-run-badge.running { color: var(--accent); border-color: var(--accent); }
+.benchmark-run-badge.done { color: var(--green); border-color: var(--green); }
+.benchmark-run-badge.error, .benchmark-run-badge.cancelled { color: var(--orange); border-color: var(--orange); }
+.benchmark-run-source {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  word-break: break-word;
+}
+.benchmark-run-summary {
+  margin-top: 8px;
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+}
+.benchmark-run-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 10px;
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.benchmark-run-artifacts {
+  margin-top: 10px;
+  display: grid;
+  gap: 6px;
+}
+.benchmark-run-artifact {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 10px;
+  border-radius: 8px;
+  background: var(--bg-secondary);
+  font-size: 12px;
+}
+.benchmark-run-artifact.missing {
+  border: 1px solid rgba(248, 81, 73, 0.35);
+}
+.benchmark-run-artifact.present {
+  border: 1px solid rgba(63, 185, 80, 0.25);
+}
+.benchmark-run-artifact-path {
+  font-family: var(--font-mono);
+  color: var(--text-primary);
+  word-break: break-word;
+}
+.benchmark-run-artifact-status {
+  flex-shrink: 0;
+  color: var(--text-secondary);
+}
+.benchmark-run-reasons {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--text-muted);
 }
 .artifacts-list {
   flex: 1; overflow-y: auto; max-height: 50vh;
@@ -1490,6 +1601,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <span class="chat-skill-badge" id="chatSkillBadge" onclick="changeChatSkill()" title="Change skill"></span>
       <div class="header-actions">
         <button class="header-btn" onclick="showMsgSearch()">🔍 Search</button>
+        <button class="header-btn" onclick="showBenchmarkRunsModal()">📊 Benchmarks</button>
         <button class="header-btn" onclick="showArtifacts()">📁 Artifacts</button>
         <button class="header-btn" onclick="syncToGithub()" id="syncBtn" title="Push to GitHub">🔄 Push</button>
         <button class="header-btn" onclick="pullFromGithub()" id="pullBtn" title="Pull from GitHub">📥 Pull</button>
@@ -1923,6 +2035,20 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   </div>
 </div>
 
+<div class="modal-overlay" id="benchmarkRunsModal" onclick="if(event.target===this)closeModal('benchmarkRunsModal')">
+  <div class="modal benchmark-runs-modal">
+    <div class="modal-header">
+      <h3>📊 Benchmark Results</h3>
+      <button class="modal-close" onclick="closeModal('benchmarkRunsModal')" title="Close">✕</button>
+    </div>
+    <div class="benchmark-runs-summary" id="benchmarkRunsSummary"></div>
+    <div class="benchmark-runs-list" id="benchmarkRunsList"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('benchmarkRunsModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ===== State =====
 let experiments = [];
@@ -1933,6 +2059,7 @@ let activeTaskList = [];    // full task list from server
 let persistedProcessHistory = [];
 let persistedActivityEvents = [];
 let liveActivityEvents = [];
+let cachedBenchmarkRuns = [];
 let currentMemory = null;   // current memory state for the active experiment
 let pendingTaskContexts = [];
 let copilotAuthStatus = {
@@ -2392,6 +2519,21 @@ async function loadActivityLog() {
   return persistedActivityEvents;
 }
 
+async function loadBenchmarkRuns() {
+  if (!currentExpId) {
+    cachedBenchmarkRuns = [];
+    return cachedBenchmarkRuns;
+  }
+  try {
+    const data = await api(`/experiments/${currentExpId}/benchmark-runs`);
+    cachedBenchmarkRuns = Array.isArray(data.runs) ? data.runs : [];
+  } catch (err) {
+    console.error('loadBenchmarkRuns failed:', err);
+    cachedBenchmarkRuns = [];
+  }
+  return cachedBenchmarkRuns;
+}
+
 // ===== Experiments =====
 async function loadExperiments() {
   experiments = await api('/experiments');
@@ -2491,6 +2633,7 @@ async function selectExperiment(id) {
   persistedProcessHistory = [];
   persistedActivityEvents = [];
   liveActivityEvents = [];
+  cachedBenchmarkRuns = [];
   const activityTaskFilter = document.getElementById('activityLogTaskFilter');
   if (activityTaskFilter) activityTaskFilter.value = 'all';
   const activitySearch = document.getElementById('activityLogSearch');
@@ -3365,6 +3508,78 @@ async function showActivityLogModal() {
   await Promise.all([loadActivityLog(), loadProcessHistory()]);
   renderActivityLogModal();
   document.getElementById('activityLogModal').classList.add('visible');
+}
+
+function formatBenchmarkStatusLabel(status) {
+  switch (status) {
+    case 'pass': return 'PASS';
+    case 'fail': return 'FAIL';
+    case 'done': return '完了';
+    case 'running': return '実行中';
+    case 'cancelled': return '停止';
+    default: return 'エラー';
+  }
+}
+
+function formatBenchmarkCoverage(value) {
+  const numeric = Number(value);
+  if (!Number.isFinite(numeric)) return '0%';
+  return `${Math.round(numeric * 100)}%`;
+}
+
+function renderBenchmarkRunsModal() {
+  const summary = document.getElementById('benchmarkRunsSummary');
+  const list = document.getElementById('benchmarkRunsList');
+  if (!summary || !list) return;
+
+  const runs = Array.isArray(cachedBenchmarkRuns) ? cachedBenchmarkRuns : [];
+  const passCount = runs.filter((run) => run.evaluation?.result === 'pass').length;
+  const failCount = runs.filter((run) => run.evaluation?.result === 'fail').length;
+
+  summary.textContent = runs.length
+    ? `${runs.length} 件の benchmark run • PASS ${passCount} / FAIL ${failCount}`
+    : 'まだ benchmark run はありません。';
+
+  if (!runs.length) {
+    list.innerHTML = '<div class="benchmark-run-empty">このチャットでは benchmark run がまだ記録されていません。</div>';
+    return;
+  }
+
+  list.innerHTML = runs.map((run) => {
+    const manifest = run.manifest || {};
+    const evaluation = run.evaluation || null;
+    const artifactCheck = run.artifactCheck || null;
+    const finishedAt = manifest.finishedAt || manifest.startedAt;
+    const missingReasons = Array.isArray(evaluation?.reasons) && evaluation.reasons.length
+      ? evaluation.reasons.join(', ')
+      : '';
+    const checks = Array.isArray(artifactCheck?.checks) ? artifactCheck.checks : [];
+    const meta = [
+      manifest.taskId ? `task ${manifest.taskId}` : '',
+      manifest.model ? `model ${manifest.model}` : '',
+      manifest.skill ? `skill ${manifest.skill}` : '',
+      artifactCheck ? `artifact coverage ${formatBenchmarkCoverage(artifactCheck.artifactCoverage)}` : '',
+    ].filter(Boolean);
+    return `<div class="benchmark-run-card">
+      <div class="benchmark-run-head">
+        <span class="benchmark-run-badge ${esc(evaluation?.result || manifest.status || 'running')}">${esc(formatBenchmarkStatusLabel(evaluation?.result || manifest.status || 'running'))}</span>
+        <span class="benchmark-run-title">${esc(manifest.promptLabel || 'benchmark')}</span>
+        <span class="benchmark-run-time">${esc(finishedAt ? new Date(finishedAt).toLocaleString('ja-JP') : '—')}</span>
+      </div>
+      <div class="benchmark-run-source">source: ${esc(manifest.promptSource || 'unknown')}</div>
+      <div class="benchmark-run-summary">${esc(evaluation?.summary || '評価結果はまだありません。')}</div>
+      ${meta.length ? `<div class="benchmark-run-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join('')}</div>` : ''}
+      ${checks.length ? `<div class="benchmark-run-artifacts">${checks.map((item) => `<div class="benchmark-run-artifact ${item.exists ? 'present' : 'missing'}"><span class="benchmark-run-artifact-path">${esc(item.path)}</span><span class="benchmark-run-artifact-status">${item.exists ? `あり • ${item.sizeBytes} B` : '欠落'}</span></div>`).join('')}</div>` : ''}
+      ${missingReasons ? `<div class="benchmark-run-reasons">reasons: ${esc(missingReasons)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function showBenchmarkRunsModal() {
+  if (!currentExpId) return;
+  await loadBenchmarkRuns();
+  renderBenchmarkRunsModal();
+  document.getElementById('benchmarkRunsModal').classList.add('visible');
 }
 
 function humanizeToolName(toolName) {

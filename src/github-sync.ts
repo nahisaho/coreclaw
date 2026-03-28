@@ -80,6 +80,21 @@ function exportExperiment(
   const expDir = path.join(exportDir, exp.name.replace(/[^a-zA-Z0-9_\u3000-\u9FFF\u4E00-\u9FFF -]/g, '_'));
   fs.mkdirSync(expDir, { recursive: true });
 
+  const copyRecursive = (srcDir: string, destDir: string): void => {
+    if (!fs.existsSync(srcDir)) return;
+    for (const entry of fs.readdirSync(srcDir, { withFileTypes: true })) {
+      const srcPath = path.join(srcDir, entry.name);
+      const destPath = path.join(destDir, entry.name);
+      if (entry.isDirectory()) {
+        fs.mkdirSync(destPath, { recursive: true });
+        copyRecursive(srcPath, destPath);
+      } else {
+        fs.mkdirSync(path.dirname(destPath), { recursive: true });
+        fs.copyFileSync(srcPath, destPath);
+      }
+    }
+  };
+
   // Export metadata
   fs.writeFileSync(
     path.join(expDir, 'experiment.json'),
@@ -116,6 +131,11 @@ function exportExperiment(
         fs.copyFileSync(srcPath, destPath);
       }
     }
+  }
+
+  const logsDir = path.join(DATA_DIR, 'experiments', experimentId, 'logs');
+  if (fs.existsSync(logsDir)) {
+    copyRecursive(logsDir, path.join(expDir, 'logs'));
   }
 }
 

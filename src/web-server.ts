@@ -14,6 +14,7 @@ import {
   initExperimentsDb,
   createExperiment,
   type ExperimentActivityEvent,
+  type BenchmarkRunManifest,
   getExperiment,
   listExperiments,
   updateExperiment,
@@ -32,12 +33,17 @@ import {
   appendTerminalProcessLog,
   drainStaleRunningProcessHistory,
   listActivityEvents,
+  listBenchmarkRuns,
   listProcessHistory,
   upsertProcessHistory,
   deleteProcessHistory,
   getArtifactsDir,
   saveArtifact,
   resolveArtifactPath,
+  writeBenchmarkRunManifest,
+  writeBenchmarkArtifactCheck,
+  writeBenchmarkEvaluationResult,
+  getArtifactSizeBytes,
 } from './experiments.js';
 import {
   getMemory,
@@ -62,7 +68,13 @@ import { syncExperiment, pullExperiment } from './github-sync.js';
 import { execSync, spawn, spawnSync } from 'child_process';
 import { classifyUpdaterDirtyFiles, parseDirtyTrackedFiles } from './update-utils.js';
 import { createDeflateRaw, inflateRawSync } from 'zlib';
-import { checkCopilotAuthStatus, type CopilotAuthStatus } from './github-auth.js';
+import { checkCopilotAuthStatus, resolveGitHubToken, type CopilotAuthStatus } from './github-auth.js';
+import {
+  buildBenchmarkArtifactCheck,
+  buildBenchmarkEvaluationResult,
+  matchBenchmarkDefinition,
+} from './benchmark-runs.js';
+import { CONTAINER_IMAGE } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COPILOT_AUTH_STATUS_TTL_MS = 60_000;
@@ -769,6 +781,7 @@ function maybeTriggerSummarization(experimentId: string): void {
 interface ActiveTask {
   id: string;
   experimentId: string;
+  sourcePrompt: string;
   prompt: string;
   status: 'running' | 'done' | 'error' | 'cancelled';
   startedAt: string;
@@ -781,6 +794,10 @@ interface ActiveTask {
   _statusHistory?: { message: string; timestamp: string }[];
   _lastStatusAt?: number;  // timestamp of the last non-heartbeat status line
   _heartbeatSent?: boolean;
+  benchmarkRunId?: string;
+  benchmarkLabel?: string;
+  benchmarkPromptSource?: string;
+  benchmarkRequiredArtifacts?: string[];
 }
 
 const activeTasks = new Map<string, ActiveTask>();
@@ -821,6 +838,96 @@ function serializeTask(task: ActiveTask): Record<string, unknown> {
 
 function generateTaskId(): string {
   return `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function generateBenchmarkRunId(): string {
+  return `bench-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function parseEnabledMcpServers(rawValue: string): string[] {
+  try {
+    if (!rawValue) return [];
+    const parsed = JSON.parse(rawValue);
+    return Array.isArray(parsed)
+      ? parsed.map((value) => String(value || '').trim()).filter(Boolean)
+      : [];
+  } catch {
+    return [];
+  }
+}
+
+function createBenchmarkRunManifest(
+  experimentId: string,
+  taskId: string,
+  promptText: string,
+  startedAt: string,
+): BenchmarkRunManifest | null {
+  const benchmark = matchBenchmarkDefinition(promptText);
+  if (!benchmark) return null;
+
+  const experiment = getExperiment(experimentId);
+  const settings = loadSettings();
+  const { source } = resolveGitHubToken();
+
+  return {
+    runId: generateBenchmarkRunId(),
+    experimentId,
+    taskId,
+    promptSource: benchmark.promptSource,
+    promptLabel: benchmark.label,
+    promptText,
+    startedAt,
+    status: 'running',
+    model: settings.copilot_model || '',
+    skill: experiment?.skill || '',
+    enabledMcpServers: parseEnabledMcpServers(experiment?.mcp_servers || ''),
+    githubMcpTools: settings.github_mcp_tools || '',
+    containerImage: CONTAINER_IMAGE,
+    copilotAuthSource: source,
+  };
+}
+
+function finalizeBenchmarkRun(task: ActiveTask, finalResponse: string): void {
+  if (!task.benchmarkRunId || !task.benchmarkLabel || !task.benchmarkRequiredArtifacts) return;
+  const finalStatus = task.status === 'running' ? 'error' : task.status;
+
+  const settings = loadSettings();
+  const experiment = getExperiment(task.experimentId);
+  const { source } = resolveGitHubToken();
+  const manifest: BenchmarkRunManifest = {
+    runId: task.benchmarkRunId,
+    experimentId: task.experimentId,
+    taskId: task.id,
+    promptSource: task.benchmarkPromptSource || 'tests/benchmark-prompts.json',
+    promptLabel: task.benchmarkLabel,
+    promptText: task.sourcePrompt,
+    startedAt: task.startedAt,
+    finishedAt: task.finishedAt,
+    status: finalStatus,
+    model: settings.copilot_model || '',
+    skill: experiment?.skill || '',
+    enabledMcpServers: parseEnabledMcpServers(experiment?.mcp_servers || ''),
+    githubMcpTools: settings.github_mcp_tools || '',
+    containerImage: CONTAINER_IMAGE,
+    copilotAuthSource: source,
+  };
+  writeBenchmarkRunManifest(task.experimentId, task.benchmarkRunId, manifest);
+
+  const artifactCheck = buildBenchmarkArtifactCheck(
+    task.benchmarkRunId,
+    task.benchmarkRequiredArtifacts,
+    listArtifacts(task.experimentId),
+    (relativePath) => getArtifactSizeBytes(task.experimentId, relativePath),
+  );
+  writeBenchmarkArtifactCheck(task.experimentId, task.benchmarkRunId, artifactCheck);
+
+  const evaluation = buildBenchmarkEvaluationResult(
+    task.benchmarkRunId,
+    finalStatus,
+    artifactCheck,
+    finalResponse,
+  );
+  writeBenchmarkEvaluationResult(task.experimentId, task.benchmarkRunId, evaluation);
 }
 
 // ---------------------------------------------------------------------------
@@ -994,6 +1101,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     const limit = parseInt(url.searchParams.get('limit') || '500', 10);
     const events = listActivityEvents(expId, limit);
     sendJson(res, 200, { events });
+    return;
+  }
+
+  // GET /api/experiments/:id/benchmark-runs
+  const benchmarkRunsMatch = pathname.match(/^\/api\/experiments\/([^/]+)\/benchmark-runs$/);
+  if (method === 'GET' && benchmarkRunsMatch) {
+    const expId = benchmarkRunsMatch[1];
+    if (!getExperiment(expId)) { sendJson(res, 404, { error: 'Not found' }); return; }
+    const runs = listBenchmarkRuns(expId);
+    sendJson(res, 200, { runs });
     return;
   }
 
@@ -1808,12 +1925,24 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
       const task: ActiveTask = {
         id: taskId,
         experimentId: data.experimentId,
+        sourcePrompt: data.content,
         prompt: data.content.slice(0, 100),
         status: 'running',
         startedAt: new Date().toISOString(),
         streamingText: '',
         _statusHistory: [],
       };
+      const benchmark = matchBenchmarkDefinition(data.content);
+      if (benchmark) {
+        const manifest = createBenchmarkRunManifest(data.experimentId, taskId, data.content, task.startedAt);
+        if (manifest) {
+          task.benchmarkRunId = manifest.runId;
+          task.benchmarkLabel = manifest.promptLabel;
+          task.benchmarkPromptSource = manifest.promptSource;
+          task.benchmarkRequiredArtifacts = benchmark.requiredArtifacts;
+          writeBenchmarkRunManifest(data.experimentId, manifest.runId, manifest);
+        }
+      }
       activeTasks.set(taskId, task);
       syncProcessHistory(task);
       persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'start', 'Task started', {
@@ -1902,6 +2031,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               _lastStatus: task._lastStatus,
               _statusHistory: task._statusHistory,
             }, fullResponse);
+            finalizeBenchmarkRun(task, fullResponse);
             syncProcessHistory(task);
             broadcastToExperiment(data.experimentId, {
               type: 'agent_done',
@@ -1939,6 +2069,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               status: 'error',
               taskPrompt: task.prompt,
             }));
+            finalizeBenchmarkRun(task, error);
             syncProcessHistory(task);
             const errMsg = addMessage(data.experimentId, 'system', `Error: ${error}`);
             broadcastToExperiment(data.experimentId, {
@@ -1999,6 +2130,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
           _lastStatus: task._lastStatus,
           _statusHistory: task._statusHistory,
         }, reply.content);
+        finalizeBenchmarkRun(task, reply.content);
         persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'complete', 'Task completed', {
           status: 'done',
           taskPrompt: task.prompt,
@@ -2035,6 +2167,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
           status: 'cancelled',
           taskPrompt: task.prompt,
         }));
+        finalizeBenchmarkRun(task, '');
         syncProcessHistory(task);
         if (agentStopper) {
           agentStopper(task.experimentId, data.taskId);
