@@ -26,6 +26,12 @@ import {
   deleteMessage,
   searchMessages,
   listArtifacts,
+  appendCompletedProcessHistory,
+  appendTerminalProcessLog,
+  drainStaleRunningProcessHistory,
+  listProcessHistory,
+  upsertProcessHistory,
+  deleteProcessHistory,
   getArtifactsDir,
   saveArtifact,
   resolveArtifactPath,
@@ -545,6 +551,23 @@ interface ActiveTask {
 
 const activeTasks = new Map<string, ActiveTask>();
 
+function syncProcessHistory(task: ActiveTask): void {
+  if (task.status !== 'running') {
+    deleteProcessHistory(task.id);
+    return;
+  }
+
+  upsertProcessHistory({
+    id: task.id,
+    experimentId: task.experimentId,
+    prompt: task.prompt || 'Running task',
+    status: task.status,
+    startedAt: task.startedAt,
+    finishedAt: task.finishedAt,
+    _lastStatus: task._lastStatus || '',
+  });
+}
+
 function serializeTask(task: ActiveTask): Record<string, unknown> {
   return {
     id: task.id,
@@ -714,6 +737,16 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     const messages = getMessages(msgMatch[1], limit, offset);
     const total = getMessageCount(msgMatch[1]);
     sendJson(res, 200, { messages, total });
+    return;
+  }
+
+  // GET /api/experiments/:id/process-history
+  const processHistoryMatch = pathname.match(/^\/api\/experiments\/([^/]+)\/process-history$/);
+  if (method === 'GET' && processHistoryMatch) {
+    const expId = processHistoryMatch[1];
+    if (!getExperiment(expId)) { sendJson(res, 404, { error: 'Not found' }); return; }
+    const tasks = listProcessHistory(expId);
+    sendJson(res, 200, { tasks });
     return;
   }
 
@@ -1521,6 +1554,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
         streamingText: '',
       };
       activeTasks.set(taskId, task);
+      syncProcessHistory(task);
 
       broadcastToExperiment(data.experimentId, { type: 'agent_start', taskId });
       broadcastTasks();
@@ -1579,6 +1613,16 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               ? { id: task.streamingMsgId, experiment_id: data.experimentId, role: 'assistant' as const, content: fullResponse, timestamp: new Date().toISOString() }
               : addMessage(data.experimentId, 'assistant', fullResponse);
             task.finalMessage = assistantMsg;
+            appendCompletedProcessHistory(task.experimentId, {
+              id: task.id,
+              experimentId: task.experimentId,
+              prompt: task.prompt,
+              status: 'running',
+              startedAt: task.startedAt,
+              finishedAt: task.finishedAt,
+              _lastStatus: task._lastStatus,
+            }, fullResponse);
+            syncProcessHistory(task);
             broadcastToExperiment(data.experimentId, {
               type: 'agent_done',
               taskId,
@@ -1601,6 +1645,16 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
             if (task._heartbeat) { clearInterval(task._heartbeat); task._heartbeat = undefined; }
             task.status = 'error';
             task.finishedAt = new Date().toISOString();
+            appendTerminalProcessLog(task.experimentId, {
+              id: task.id,
+              experimentId: task.experimentId,
+              prompt: task.prompt,
+              status: 'error',
+              startedAt: task.startedAt,
+              finishedAt: task.finishedAt,
+              _lastStatus: task._lastStatus,
+            }, error);
+            syncProcessHistory(task);
             const errMsg = addMessage(data.experimentId, 'system', `Error: ${error}`);
             broadcastToExperiment(data.experimentId, {
               type: 'agent_error',
@@ -1618,6 +1672,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
             if (task._lastStatusAt && now - task._lastStatusAt < 2000 && statusLine === 'Copilot is analyzing the task') return;
             task._lastStatus = statusLine;
             task._lastStatusAt = now;
+            syncProcessHistory(task);
             broadcastToExperiment(data.experimentId, {
               type: 'agent_status',
               taskId,
@@ -1633,6 +1688,16 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
           'assistant',
           `[No agent configured] Received: ${data.content}`,
         );
+        appendCompletedProcessHistory(task.experimentId, {
+          id: task.id,
+          experimentId: task.experimentId,
+          prompt: task.prompt,
+          status: 'running',
+          startedAt: task.startedAt,
+          finishedAt: task.finishedAt,
+          _lastStatus: task._lastStatus,
+        }, reply.content);
+        syncProcessHistory(task);
         broadcastToExperiment(data.experimentId, {
           type: 'agent_done',
           taskId,
@@ -1650,6 +1715,16 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
         if (task._heartbeat) { clearInterval(task._heartbeat); task._heartbeat = undefined; }
         task.status = 'cancelled';
         task.finishedAt = new Date().toISOString();
+        appendTerminalProcessLog(task.experimentId, {
+          id: task.id,
+          experimentId: task.experimentId,
+          prompt: task.prompt,
+          status: 'cancelled',
+          startedAt: task.startedAt,
+          finishedAt: task.finishedAt,
+          _lastStatus: task._lastStatus,
+        }, 'Task cancelled by user.');
+        syncProcessHistory(task);
         if (agentStopper) {
           agentStopper(task.experimentId, data.taskId);
         }
@@ -1978,6 +2053,10 @@ function requestProcessRestart(reason: string): void {
 export function startWebServer(port = WEB_PORT): Promise<void> {
   // Initialize experiments database
   initExperimentsDb(getDatabase());
+  const staleCount = drainStaleRunningProcessHistory();
+  if (staleCount > 0) {
+    logger.info({ staleCount }, 'Drained stale running process history entries');
+  }
 
   return new Promise((resolve) => {
     const server = createServer((req, res) => {

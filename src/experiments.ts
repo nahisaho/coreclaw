@@ -34,6 +34,16 @@ export interface ExperimentMessage {
   user_id?: string; // GitHub username of sender
 }
 
+export interface ExperimentProcessHistory {
+  id: string;
+  experimentId: string;
+  prompt: string;
+  status: 'running' | 'error' | 'cancelled';
+  startedAt: string;
+  finishedAt?: string;
+  _lastStatus?: string;
+}
+
 // ---------------------------------------------------------------------------
 // Database helpers (lazy‑initialized via initExperimentsDb)
 // ---------------------------------------------------------------------------
@@ -74,6 +84,19 @@ export function initExperimentsDb(database: Database.Database): void {
     );
     CREATE INDEX IF NOT EXISTS idx_exp_msg_exp ON experiment_messages(experiment_id);
     CREATE INDEX IF NOT EXISTS idx_exp_msg_ts ON experiment_messages(timestamp);
+
+    CREATE TABLE IF NOT EXISTS experiment_process_history (
+      task_id TEXT PRIMARY KEY,
+      experiment_id TEXT NOT NULL,
+      prompt TEXT NOT NULL,
+      status TEXT NOT NULL,
+      started_at TEXT NOT NULL,
+      finished_at TEXT,
+      last_status TEXT DEFAULT '',
+      FOREIGN KEY (experiment_id) REFERENCES experiments(id) ON DELETE CASCADE
+    );
+    CREATE INDEX IF NOT EXISTS idx_exp_proc_hist_exp ON experiment_process_history(experiment_id, started_at DESC);
+    CREATE INDEX IF NOT EXISTS idx_exp_proc_hist_status ON experiment_process_history(status);
   `);
 
   // Migrations
@@ -96,6 +119,10 @@ export function initExperimentsDb(database: Database.Database): void {
   const msgCols = db.prepare("PRAGMA table_info('experiment_messages')").all() as { name: string }[];
   if (!msgCols.find(c => c.name === 'user_id')) {
     db.exec("ALTER TABLE experiment_messages ADD COLUMN user_id TEXT DEFAULT ''");
+  }
+  const processHistoryCols = db.prepare("PRAGMA table_info('experiment_process_history')").all() as { name: string }[];
+  if (!processHistoryCols.find(c => c.name === 'last_status')) {
+    db.exec("ALTER TABLE experiment_process_history ADD COLUMN last_status TEXT DEFAULT ''");
   }
 
   // Initialize memory subsystem (same DB connection)
@@ -391,6 +418,169 @@ export function deleteMessage(msgId: string): void {
   getDb()
     .prepare('DELETE FROM experiment_messages WHERE id = ?')
     .run(msgId);
+}
+
+export function upsertProcessHistory(entry: ExperimentProcessHistory): void {
+  getDb()
+    .prepare(
+      `INSERT INTO experiment_process_history (task_id, experiment_id, prompt, status, started_at, finished_at, last_status)
+       VALUES (?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT(task_id) DO UPDATE SET
+         experiment_id = excluded.experiment_id,
+         prompt = excluded.prompt,
+         status = excluded.status,
+         started_at = excluded.started_at,
+         finished_at = excluded.finished_at,
+         last_status = excluded.last_status`,
+    )
+    .run(
+      entry.id,
+      entry.experimentId,
+      entry.prompt,
+      entry.status,
+      entry.startedAt,
+      entry.finishedAt ?? null,
+      entry._lastStatus ?? '',
+    );
+}
+
+export function deleteProcessHistory(taskId: string): void {
+  getDb()
+    .prepare('DELETE FROM experiment_process_history WHERE task_id = ?')
+    .run(taskId);
+}
+
+export function appendTerminalProcessLog(
+  experimentId: string,
+  entry: ExperimentProcessHistory,
+  note = '',
+): void {
+  try {
+    const logDir = path.join(experimentDir(experimentId), 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    const jsonlPath = path.join(logDir, 'process-history.jsonl');
+    fs.appendFileSync(
+      jsonlPath,
+      JSON.stringify({
+        taskId: entry.id,
+        experimentId,
+        prompt: entry.prompt,
+        status: entry.status,
+        startedAt: entry.startedAt,
+        finishedAt: entry.finishedAt ?? null,
+        lastStatus: entry._lastStatus ?? '',
+        note,
+        timestamp: new Date().toISOString(),
+      }) + '\n',
+    );
+  } catch (err) {
+    logger.warn({ experimentId, err }, 'Failed to write process history log');
+  }
+}
+
+export function appendCompletedProcessHistory(
+  experimentId: string,
+  entry: ExperimentProcessHistory,
+  response: string,
+): void {
+  try {
+    const wsDir = getWorkspaceDir(experimentId);
+    fs.mkdirSync(wsDir, { recursive: true });
+    const historyPath = path.join(wsDir, 'HISTORY.md');
+    const header = fs.existsSync(historyPath) ? '' : '# History\n\n';
+    const started = new Date(entry.startedAt).toLocaleString('ja-JP');
+    const finished = entry.finishedAt
+      ? new Date(entry.finishedAt).toLocaleString('ja-JP')
+      : '—';
+    const prompt = (entry.prompt || '').trim() || '(empty prompt)';
+    const body = (response || '').trim() || '(empty response)';
+
+    fs.appendFileSync(
+      historyPath,
+      `${header}## ${finished}\n\n` +
+      `- Task ID: ${entry.id}\n` +
+      `- Started: ${started}\n` +
+      `- Finished: ${finished}\n\n` +
+      `### Prompt\n\n${prompt}\n\n` +
+      `### Response\n\n${body}\n\n---\n\n`,
+    );
+  } catch (err) {
+    logger.warn({ experimentId, err }, 'Failed to write completed process history');
+  }
+}
+
+export function listProcessHistory(
+  experimentId: string,
+  limit = 200,
+): ExperimentProcessHistory[] {
+  const rows = getDb()
+    .prepare(
+      `SELECT task_id, experiment_id, prompt, status, started_at, finished_at, last_status
+       FROM experiment_process_history
+       WHERE experiment_id = ? AND status = 'running'
+       ORDER BY started_at DESC
+       LIMIT ?`,
+    )
+    .all(experimentId, limit) as {
+      task_id: string;
+      experiment_id: string;
+      prompt: string;
+      status: 'running' | 'error' | 'cancelled';
+      started_at: string;
+      finished_at: string | null;
+      last_status: string | null;
+    }[];
+
+  return rows.map((row) => ({
+    id: row.task_id,
+    experimentId: row.experiment_id,
+    prompt: row.prompt,
+    status: row.status,
+    startedAt: row.started_at,
+    finishedAt: row.finished_at ?? undefined,
+    _lastStatus: row.last_status ?? '',
+  }));
+}
+
+export function drainStaleRunningProcessHistory(): number {
+  const now = new Date().toISOString();
+  const rows = getDb()
+    .prepare(
+      `SELECT task_id, experiment_id, prompt, status, started_at, finished_at, last_status
+       FROM experiment_process_history
+       WHERE status = 'running'`,
+    )
+    .all() as {
+      task_id: string;
+      experiment_id: string;
+      prompt: string;
+      status: 'running';
+      started_at: string;
+      finished_at: string | null;
+      last_status: string | null;
+    }[];
+
+  for (const row of rows) {
+    appendTerminalProcessLog(
+      row.experiment_id,
+      {
+        id: row.task_id,
+        experimentId: row.experiment_id,
+        prompt: row.prompt,
+        status: 'cancelled',
+        startedAt: row.started_at,
+        finishedAt: row.finished_at ?? now,
+        _lastStatus: row.last_status || 'CoreClaw restarted before this process finished.',
+      },
+      'CoreClaw restarted before this process finished.',
+    );
+  }
+
+  getDb()
+    .prepare("DELETE FROM experiment_process_history WHERE status = 'running'")
+    .run();
+
+  return rows.length;
 }
 
 // ---------------------------------------------------------------------------

@@ -28,6 +28,7 @@
   --user-bg: #1f6feb33;
   --assistant-bg: #161b22;
   --sidebar-w: 300px;
+  --chat-content-w: 900px;
   --radius: 8px;
   --font-mono: 'SF Mono', 'Fira Code', 'Cascadia Code', monospace;
 }
@@ -757,6 +758,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   border: 1px solid var(--border); border-bottom-left-radius: 2px;
   max-width: 90%;
 }
+.message.assistant.streaming {
+  width: min(100%, var(--chat-content-w));
+  max-width: min(100%, var(--chat-content-w));
+}
 .message.system {
   background: transparent; align-self: center;
   color: var(--text-muted); font-size: 12px; font-style: italic;
@@ -1199,7 +1204,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .input-area.visible { display: block; }
 .input-wrapper {
   display: flex; gap: 8px; align-items: flex-end;
-  max-width: 900px; margin: 0 auto;
+  max-width: var(--chat-content-w); margin: 0 auto;
 }
 .input-wrapper textarea {
   flex: 1; padding: 12px 16px; background: var(--bg-tertiary);
@@ -1797,6 +1802,7 @@ let currentExpId = null;
 let ws = null;
 let activeTasks = {};       // taskId -> { streamBuffer }
 let activeTaskList = [];    // full task list from server
+let persistedProcessHistory = [];
 let currentMemory = null;   // current memory state for the active experiment
 let pendingTaskContexts = [];
 
@@ -2074,6 +2080,21 @@ async function api(path, opts = {}) {
   return res.json();
 }
 
+async function loadProcessHistory() {
+  if (!currentExpId) {
+    persistedProcessHistory = [];
+    return persistedProcessHistory;
+  }
+  try {
+    const data = await api(`/experiments/${currentExpId}/process-history`);
+    persistedProcessHistory = Array.isArray(data.tasks) ? data.tasks : [];
+  } catch (err) {
+    console.error('loadProcessHistory failed:', err);
+    persistedProcessHistory = [];
+  }
+  return persistedProcessHistory;
+}
+
 // ===== Experiments =====
 async function loadExperiments() {
   experiments = await api('/experiments');
@@ -2170,6 +2191,7 @@ async function selectExperiment(id) {
     removeStreamingMessage(taskId);
   }
   activeTasks = {};
+  persistedProcessHistory = [];
 
   currentExpId = id;
 
@@ -2784,19 +2806,23 @@ function showStatusPanel(taskId) {
 }
 
 function getProcessHistoryItems() {
-  const seen = new Set();
-  const items = [];
+  const byId = new Map();
+
+  for (const task of persistedProcessHistory) {
+    if (task.experimentId !== currentExpId) continue;
+    if (task.status === 'done') continue;
+    byId.set(task.id, task);
+  }
 
   for (const task of activeTaskList) {
     if (task.experimentId !== currentExpId) continue;
-    seen.add(task.id);
-    items.push(task);
+    if (task.status !== 'running') continue;
+    byId.set(task.id, task);
   }
 
   for (const [taskId, task] of Object.entries(activeTasks)) {
-    if (seen.has(taskId)) continue;
     if (task.experimentId && task.experimentId !== currentExpId) continue;
-    items.push({
+    byId.set(taskId, {
       id: taskId,
       experimentId: task.experimentId || currentExpId,
       prompt: task.prompt || task.streamBuffer || 'Running task',
@@ -2807,7 +2833,7 @@ function getProcessHistoryItems() {
     });
   }
 
-  return items.sort((left, right) => {
+  return Array.from(byId.values()).sort((left, right) => {
     const leftTs = new Date(left.startedAt || 0).getTime();
     const rightTs = new Date(right.startedAt || 0).getTime();
     return rightTs - leftTs;
@@ -2841,10 +2867,10 @@ function renderProcessHistoryModal() {
   const runningCount = tasks.filter(task => task.status === 'running').length;
   summary.textContent = tasks.length
     ? `${tasks.length} process${tasks.length === 1 ? '' : 'es'} in this chat${runningCount ? ` • ${runningCount} running` : ''}`
-    : 'No processes yet in this chat.';
+    : 'No running processes in this chat.';
 
   if (!tasks.length) {
-    list.innerHTML = '<div class="process-history-empty">No processes yet.</div>';
+    list.innerHTML = '<div class="process-history-empty">No running processes yet.</div>';
     return;
   }
 
@@ -2871,7 +2897,8 @@ function renderProcessHistoryModal() {
   }).join('');
 }
 
-function showProcessHistoryModal() {
+async function showProcessHistoryModal() {
+  await loadProcessHistory();
   renderProcessHistoryModal();
   document.getElementById('processHistoryModal').classList.add('visible');
 }

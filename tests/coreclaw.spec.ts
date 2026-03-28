@@ -925,6 +925,23 @@ test.describe('Chat Flow', () => {
       expect(result.toolsText).toContain('OpenAlex_search_papers');
     });
 
+    test('streaming status width matches prompt input width', async ({ page }) => {
+      await page.goto('/');
+
+      await createExperiment(page, 'Streaming Width Test');
+
+      await page.evaluate(() => {
+        window.showStatusPanel('task-width');
+      });
+
+      const inputBox = await page.locator('.input-wrapper').boundingBox();
+      const streamingBox = await page.locator('#streaming-msg-task-width').boundingBox();
+
+      expect(inputBox).not.toBeNull();
+      expect(streamingBox).not.toBeNull();
+      expect(Math.abs((streamingBox?.width || 0) - (inputBox?.width || 0))).toBeLessThanOrEqual(1);
+    });
+
     test('streaming status marks the latest tool chip as active', async ({ page }) => {
       await page.goto('/');
 
@@ -956,6 +973,15 @@ test.describe('Chat Flow', () => {
       await createExperiment(page, 'Process History Test');
 
       const currentExperimentId = await page.evaluate(() => currentExpId);
+
+      await page.route('**/api/experiments/*/process-history', async (route) => {
+        await route.fulfill({
+          contentType: 'application/json',
+          body: JSON.stringify({
+            tasks: [],
+          }),
+        });
+      });
 
       await page.evaluate(([expId]) => {
         activeTaskList = [
@@ -992,10 +1018,11 @@ test.describe('Chat Flow', () => {
 
       await expect(page.locator('#processHistoryModal')).toHaveClass(/visible/);
       await expect(page.locator('#processHistoryList')).toContainText('現在の実行中プロセス');
-      await expect(page.locator('#processHistoryList')).toContainText('完了したプロセス');
+      await expect(page.locator('#processHistoryList')).not.toContainText('完了したプロセス');
+      await expect(page.locator('#processHistoryList')).not.toContainText('中断したプロセス');
       await expect(page.locator('#processHistoryList')).not.toContainText('別チャットのプロセス');
       await expect(page.locator('#processHistoryList')).toContainText('Running');
-      await expect(page.locator('#processHistoryList')).toContainText('Done');
+      await expect(page.locator('#processHistoryList')).not.toContainText('Cancelled');
     });
 
     test('websocket event sequence updates progress panel and final message', async ({ page }) => {
