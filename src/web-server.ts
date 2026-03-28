@@ -1036,8 +1036,13 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 
   // GET /api/versions — get current versions of components
   if (method === 'GET' && pathname === '/api/versions') {
-    const versions = getComponentVersions();
-    sendJson(res, 200, versions);
+    try {
+      const versions = getComponentVersions();
+      sendJson(res, 200, versions);
+    } catch (err) {
+      logger.error({ err }, 'Failed to get component versions');
+      sendJson(res, 500, { error: 'Failed to load versions' });
+    }
     return;
   }
 
@@ -1979,8 +1984,8 @@ export function startWebServer(port = WEB_PORT): Promise<void> {
       handleRequest(req, res).catch((err) => {
         logger.error({ err }, 'Request handler error');
         if (!res.headersSent) {
-          res.writeHead(500);
-          res.end('Internal Server Error');
+          res.writeHead(500, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ error: 'Internal Server Error' }));
         }
       });
     });

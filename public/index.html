@@ -1955,6 +1955,10 @@ async function api(path, opts = {}) {
     headers: { 'Content-Type': 'application/json' },
     ...opts,
   });
+  if (!res.ok) {
+    const text = await res.text();
+    throw new Error(text || `HTTP ${res.status}`);
+  }
   return res.json();
 }
 
@@ -4308,7 +4312,8 @@ async function loadComponentVersions() {
         ${showButtons ? `<button class="btn-check" id="check-${c.key}" onclick="checkComponent('${c.key}')">Check</button><button class="btn-update" id="update-${c.key}" onclick="updateComponent('${c.key}')" disabled>Update</button>` : ''}
       </div>`;
     }).join('');
-  } catch {
+  } catch (err) {
+    console.error('loadComponentVersions failed:', err);
     container.innerHTML = '<div style="color:var(--text-muted);font-size:12px">Failed to load versions</div>';
   }
 }
