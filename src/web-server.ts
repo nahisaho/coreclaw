@@ -1751,6 +1751,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
       syncProcessHistory(task);
       persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'start', 'Task started', {
         status: 'running',
+        taskPrompt: task.prompt,
       }));
 
       broadcastToExperiment(data.experimentId, { type: 'agent_start', taskId });
@@ -1822,6 +1823,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
             }, 'completed');
             persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'complete', 'Task completed', {
               status: 'done',
+              taskPrompt: task.prompt,
             }));
             appendCompletedProcessHistory(task.experimentId, {
               id: task.id,
@@ -1868,6 +1870,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
             }, error);
             persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'error', `Task failed: ${error}`, {
               status: 'error',
+              taskPrompt: task.prompt,
             }));
             syncProcessHistory(task);
             const errMsg = addMessage(data.experimentId, 'system', `Error: ${error}`);
@@ -1931,6 +1934,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
         }, reply.content);
         persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'complete', 'Task completed', {
           status: 'done',
+          taskPrompt: task.prompt,
         }));
         syncProcessHistory(task);
         broadcastToExperiment(data.experimentId, {
@@ -1962,6 +1966,7 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
         }, 'Task cancelled by user.');
         persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'cancel', 'Task cancelled by user.', {
           status: 'cancelled',
+          taskPrompt: task.prompt,
         }));
         syncProcessHistory(task);
         if (agentStopper) {

@@ -1093,6 +1093,103 @@ test.describe('Chat Flow', () => {
       await expect(page.locator('#activityLogList')).not.toContainText('Creating file: reports/daily-summary.md');
     });
 
+    test('activity log shows which task started', async ({ page }) => {
+      await page.goto('/');
+
+      await createExperiment(page, 'Activity Task Start Test');
+
+      await page.route('**/api/experiments/*/process-history', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ tasks: [] }),
+        });
+      });
+      await page.route('**/api/experiments/*/activity', async (route) => {
+        const expId = route.request().url().match(/\/api\/experiments\/([^/]+)\/activity/)?.[1] || '';
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            events: [
+              {
+                id: 'activity-task-start',
+                experimentId: expId,
+                taskId: 'task-start-1',
+                timestamp: new Date('2026-03-28T12:12:00.000Z').toISOString(),
+                category: 'task',
+                action: 'start',
+                message: 'Task started',
+                raw: 'Task started',
+                taskPrompt: 'CRISPR base editing の代表論文を調査',
+                status: 'running',
+              },
+            ],
+          }),
+        });
+      });
+
+      await page.evaluate(() => {
+        window.showStatusPanel('task-start-1');
+      });
+
+      await page.locator('#streaming-msg-task-start-1 .streaming-activity-btn').click();
+
+      await expect(page.locator('#activityLogModal')).toHaveClass(/visible/);
+      await expect(page.locator('#activityLogList')).toContainText('タスクを開始: CRISPR base editing の代表論文を調査');
+      await expect(page.locator('#activityLogList')).toContainText('内容: CRISPR base editing の代表論文を調査');
+      await expect(page.locator('#activityLogList')).not.toContainText('Task started');
+    });
+
+    test('activity log shows which task completed', async ({ page }) => {
+      await page.goto('/');
+
+      await createExperiment(page, 'Activity Task Complete Test');
+
+      await page.route('**/api/experiments/*/process-history', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ tasks: [] }),
+        });
+      });
+      await page.route('**/api/experiments/*/activity', async (route) => {
+        const expId = route.request().url().match(/\/api\/experiments\/([^/]+)\/activity/)?.[1] || '';
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            events: [
+              {
+                id: 'activity-task-complete',
+                experimentId: expId,
+                taskId: 'task-complete-1',
+                timestamp: new Date('2026-03-28T12:13:00.000Z').toISOString(),
+                category: 'task',
+                action: 'complete',
+                message: 'Task completed',
+                raw: 'Task completed',
+                taskPrompt: 'CRISPR base editing の代表論文を調査',
+                status: 'done',
+              },
+            ],
+          }),
+        });
+      });
+
+      await page.evaluate(() => {
+        window.showStatusPanel('task-complete-1');
+      });
+
+      await page.locator('#streaming-msg-task-complete-1 .streaming-activity-btn').click();
+
+      await expect(page.locator('#activityLogModal')).toHaveClass(/visible/);
+      await expect(page.locator('#activityLogList')).toContainText('タスク完了: CRISPR base editing の代表論文を調査');
+      await expect(page.locator('#activityLogList')).toContainText('内容: CRISPR base editing の代表論文を調査');
+      await expect(page.locator('#activityLogList')).toContainText('状態: done');
+      await expect(page.locator('#activityLogList')).not.toContainText('Task completed');
+    });
+
     test('websocket event sequence updates progress panel and final message', async ({ page }) => {
       await page.goto('/');
 

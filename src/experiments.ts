@@ -54,6 +54,7 @@ export interface ExperimentActivityEvent {
   action: string;
   message: string;
   raw?: string;
+  taskPrompt?: string;
   toolName?: string;
   filePath?: string;
   command?: string;

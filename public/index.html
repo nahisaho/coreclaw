@@ -3110,6 +3110,17 @@ function formatActivityBadge(category) {
 
 function formatActivityDisplayMessage(item) {
   const baseMessage = formatFriendlyStatus(item.message) || item.message || '';
+  if (item.category === 'task') {
+    const taskPrompt = String(item.taskPrompt || '').trim();
+    const actionLabels = {
+      start: 'タスクを開始',
+      complete: 'タスク完了',
+      error: 'タスク失敗',
+      cancel: 'タスク中止',
+    };
+    const prefix = actionLabels[item.action] || 'タスク';
+    return taskPrompt ? `${prefix}: ${taskPrompt}` : baseMessage;
+  }
   if (item.category !== 'file') return baseMessage;
   const filePath = item.filePath || extractFilePathFromStatusMessage(item.message);
   const fileName = getPathLeaf(filePath);
@@ -3136,7 +3147,7 @@ function formatActivityRawDetail(item, displayMessage) {
     ...item,
     message: item.raw,
   };
-  const localizedRaw = item.category === 'file'
+  const localizedRaw = item.category === 'file' || item.category === 'task'
     ? formatActivityDisplayMessage(rawItem)
     : (formatFriendlyStatus(item.raw) || item.raw || '');
   const normalizedDisplay = String(displayMessage || '').trim();
@@ -3173,6 +3184,7 @@ function renderActivityLogModal() {
     const fileName = getPathLeaf(filePath);
     const meta = [
       item.taskId ? `タスク: ${item.taskId}` : '',
+      item.taskPrompt ? `内容: ${item.taskPrompt}` : '',
       item.toolName ? `ツール: ${item.toolName}` : '',
       fileName ? `ファイル: ${fileName}` : '',
       filePath && filePath !== fileName ? `パス: ${filePath}` : '',
