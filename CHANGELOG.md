@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.44] - 2026-03-28
+
+### Fixed
+
+- **EADDRINUSE on restart**: Credential proxy server is now properly closed before process re-exec during CoreClaw self-update, preventing port conflicts on restart.
+
+### Changed
+
+- **Stop button icon**: Sidebar stop control now uses 🔴 (red circle) emoji instead of ⏹️.
+
 ## [0.1.43] - 2026-03-28
 
 ### Changed

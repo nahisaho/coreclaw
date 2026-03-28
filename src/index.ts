@@ -54,7 +54,7 @@ import {
   shouldDropMessage,
 } from './sender-allowlist.js';
 import { startSchedulerLoop } from './task-scheduler.js';
-import { startWebServer, setAgentRunner, setAgentStopper, setAppShutdown, setMemorySummarizer, WEB_PORT } from './web-server.js';
+import { restartCurrentProcess, startWebServer, setAgentRunner, setAgentStopper, setAppRestart, setAppShutdown, setMemorySummarizer, WEB_PORT } from './web-server.js';
 import {
   addMessage as addExperimentMessage,
   getArtifactsDir,
@@ -614,14 +614,36 @@ async function main(): Promise<void> {
     PROXY_BIND_HOST,
   );
 
+  const closeProxyServer = async (): Promise<void> => {
+    await new Promise<void>((resolve, reject) => {
+      proxyServer.close((err?: Error) => {
+        if (err && (err as NodeJS.ErrnoException).code !== 'ERR_SERVER_NOT_RUNNING') {
+          reject(err);
+          return;
+        }
+        resolve();
+      });
+    });
+  };
+
   const shutdown = async (signal: string) => {
     logger.info({ signal }, 'Shutdown signal received');
-    proxyServer.close();
+    await closeProxyServer();
     await queue.shutdown(10000);
     for (const ch of channels) await ch.disconnect();
     process.exit(0);
   };
+
+  const restart = async (signal: string) => {
+    logger.info({ signal }, 'Restart signal received');
+    await closeProxyServer();
+    await queue.shutdown(10000);
+    for (const ch of channels) await ch.disconnect();
+    restartCurrentProcess();
+  };
+
   setAppShutdown(shutdown);
+  setAppRestart(restart);
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 

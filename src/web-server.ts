@@ -441,6 +441,7 @@ type AgentRunner = (
 
 type AgentStopper = (experimentId: string, taskId: string) => void;
 type AppShutdown = (reason: string) => Promise<void>;
+type AppRestart = (reason: string) => Promise<void>;
 
 /**
  * Callback registered by the orchestrator to run a memory summarisation pass.
@@ -456,6 +457,7 @@ type MemorySummarizer = (
 let agentRunner: AgentRunner | null = null;
 let agentStopper: AgentStopper | null = null;
 let appShutdown: AppShutdown | null = null;
+let appRestart: AppRestart | null = null;
 let memorySummarizer: MemorySummarizer | null = null;
 
 export function setAgentRunner(runner: AgentRunner): void {
@@ -468,6 +470,10 @@ export function setAgentStopper(stopper: AgentStopper): void {
 
 export function setAppShutdown(shutdown: AppShutdown): void {
   appShutdown = shutdown;
+}
+
+export function setAppRestart(restart: AppRestart): void {
+  appRestart = restart;
 }
 
 export function setMemorySummarizer(summarizer: MemorySummarizer): void {
@@ -1902,7 +1908,7 @@ let restartSignalArmed = false;
  * A 3-second hard-timeout forces exit if connections do not drain in time,
  * preventing the new process from hitting EADDRINUSE.
  */
-function performProcessRestart(): void {
+export function restartCurrentProcess(): void {
   if (restartInProgress) return;
   restartInProgress = true;
 
@@ -1942,7 +1948,14 @@ function requestProcessRestart(reason: string): void {
   const onRestartSignal = () => {
     restartSignalArmed = false;
     logger.info({ reason, pid: process.pid }, 'Received SIGHUP restart signal');
-    performProcessRestart();
+    if (appRestart) {
+      void appRestart(reason).catch((err) => {
+        restartInProgress = false;
+        logger.error({ err, reason }, 'App restart callback failed');
+      });
+      return;
+    }
+    restartCurrentProcess();
   };
 
   process.once('SIGHUP', onRestartSignal);

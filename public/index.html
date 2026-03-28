@@ -229,12 +229,12 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 }
 .settings-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--text-muted); }
 .stop-btn {
-  background: #4a1f1f; border: 1px solid #7a3030;
-  color: #ffd6d6; width: 32px; height: 32px; border-radius: var(--radius);
-  cursor: pointer; font-size: 15px; font-weight: 600; padding: 0;
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  color: var(--text-secondary); width: 32px; height: 32px; border-radius: var(--radius);
+  cursor: pointer; font-size: 16px; padding: 0;
   display: inline-flex; align-items: center; justify-content: center; transition: all .15s;
 }
-.stop-btn:hover { background: #5d2626; border-color: #9a4343; color: #fff1f1; }
+.stop-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--text-muted); }
 .stop-btn:disabled { opacity: .75; cursor: default; }
 
 /* Settings modal overrides */
@@ -1262,7 +1262,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
         <span><span id="skillCount">0</span> Agent Skills</span>
         <div class="sidebar-footer-actions">
           <button class="settings-btn" onclick="showSettings()" title="Settings">⚙️</button>
-          <button class="stop-btn" id="stopServerBtn" onclick="stopWebServer()" title="Stop web server">⏹️</button>
+          <button class="stop-btn" id="stopServerBtn" onclick="stopWebServer()" title="Stop web server">🔴</button>
         </div>
       </div>
     </div>
