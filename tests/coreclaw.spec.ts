@@ -1345,6 +1345,95 @@ test.describe('Chat Flow', () => {
       await expect(page.locator('#activityLogList')).not.toContainText('Task completed');
     });
 
+    test('activity log uses English labels when output language is English', async ({ page }) => {
+      await page.route('**/api/settings', async (route) => {
+        if (route.request().method() === 'GET') {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ output_language: 'en' }),
+          });
+          return;
+        }
+        await route.fallback();
+      });
+
+      await page.goto('/');
+
+      await createExperiment(page, 'Activity English Test');
+
+      await page.route('**/api/experiments/*/process-history', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ tasks: [] }),
+        });
+      });
+      await page.route('**/api/experiments/*/activity', async (route) => {
+        const expId = route.request().url().match(/\/api\/experiments\/([^/]+)\/activity/)?.[1] || '';
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            events: [
+              {
+                id: 'activity-task-start-en',
+                experimentId: expId,
+                taskId: 'task-start-en',
+                timestamp: new Date('2026-03-28T12:12:00.000Z').toISOString(),
+                category: 'task',
+                action: 'start',
+                message: 'Task started',
+                raw: 'Task started',
+                taskPrompt: 'Investigate representative CRISPR base editing papers',
+                status: 'running',
+              },
+            ],
+          }),
+        });
+      });
+
+      await page.evaluate(() => {
+        window.showStatusPanel('task-start-en');
+      });
+
+      await page.locator('#streaming-msg-task-start-en .streaming-activity-btn').click();
+
+      await expect(page.locator('#activityLogList')).toContainText('Task started: Investigate representative CRISPR base editing papers');
+      await expect(page.locator('#activityLogList')).toContainText('Prompt: Investigate representative CRISPR base editing papers');
+      await expect(page.locator('#activityLogList')).not.toContainText('タスクを開始');
+    });
+
+    test('streaming status uses English when output language is English', async ({ page }) => {
+      await page.route('**/api/settings', async (route) => {
+        if (route.request().method() === 'GET') {
+          await route.fulfill({
+            status: 200,
+            contentType: 'application/json',
+            body: JSON.stringify({ output_language: 'en' }),
+          });
+          return;
+        }
+        await route.fallback();
+      });
+
+      await page.goto('/');
+
+      await createExperiment(page, 'Streaming English Test');
+
+      const experimentId = await page.evaluate(() => currentExpId);
+      const taskId = 'streaming-en-task';
+
+      await page.evaluate(([expId, id]) => {
+        const emit = (payload) => ws.onmessage({ data: JSON.stringify(payload) });
+        emit({ experimentId: expId, type: 'agent_start', taskId: id });
+        emit({ experimentId: expId, type: 'agent_status', taskId: id, status: 'Calling ToolUniverse-execute_tool: OpenAlex literature search academic papers' });
+      }, [experimentId, taskId]);
+
+      await expect(page.locator('#asp-step-' + taskId)).toContainText('Searching academic papers on OpenAlex');
+      await expect(page.locator('#asp-step-' + taskId)).not.toContainText('学術論文');
+    });
+
     test('websocket event sequence updates progress panel and final message', async ({ page }) => {
       await page.goto('/');
 

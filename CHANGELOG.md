@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.54] - 2026-03-29
+
+### Changed
+
+- **Output language now affects live chat UI**: Settings → General で Output Language を `English` にすると、Chat の Activity 表示と応答中の進行メッセージも英語で表示されるようにしました。
+
 ## [0.1.53] - 2026-03-29
 
 ### Fixed

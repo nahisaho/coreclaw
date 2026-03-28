@@ -2062,12 +2062,70 @@ let liveActivityEvents = [];
 let cachedBenchmarkRuns = [];
 let currentMemory = null;   // current memory state for the active experiment
 let pendingTaskContexts = [];
+let currentOutputLanguage = 'ja';
 let copilotAuthStatus = {
   ok: false,
   state: 'checking',
   source: 'none',
   message: 'GitHub Copilot 認証状態を確認しています。',
 };
+
+function isEnglishOutputLanguage() {
+  return currentOutputLanguage === 'en';
+}
+
+function getOutputLanguageLocale() {
+  return isEnglishOutputLanguage() ? 'en-US' : 'ja-JP';
+}
+
+function outputLanguageText(jaText, enText) {
+  return isEnglishOutputLanguage() ? enText : jaText;
+}
+
+function updateActivityLogControls() {
+  const filter = document.getElementById('activityLogFilter');
+  if (filter) {
+    const previousValue = filter.value || 'all';
+    filter.innerHTML = [
+      ['all', outputLanguageText('すべて', 'All')],
+      ['task', outputLanguageText('タスク', 'Task')],
+      ['tool', outputLanguageText('ツール', 'Tool')],
+      ['command', outputLanguageText('コマンド', 'Command')],
+      ['file', outputLanguageText('ファイル', 'File')],
+      ['model', outputLanguageText('モデル', 'Model')],
+      ['system', outputLanguageText('システム', 'System')],
+    ].map(([value, label]) => `<option value="${value}">${esc(label)}</option>`).join('');
+    filter.value = previousValue;
+  }
+
+  const search = document.getElementById('activityLogSearch');
+  if (search) {
+    search.placeholder = outputLanguageText(
+      'メッセージ、パス、コマンド、ツール名で検索...',
+      'Search by message, path, command, or tool...',
+    );
+  }
+}
+
+function applyOutputLanguagePreference(language) {
+  currentOutputLanguage = language === 'en' ? 'en' : 'ja';
+  updateActivityLogControls();
+
+  for (const [taskId, task] of Object.entries(activeTasks)) {
+    task.context = buildTaskContext(task.prompt || task.streamBuffer || '');
+    if (task._lastStatus) {
+      updateStatusPanelLine(taskId, task._lastStatus);
+    } else if (task.streamBuffer) {
+      updateStreamingMessage(task.streamBuffer, taskId);
+    } else {
+      showStatusPanel(taskId);
+    }
+  }
+
+  if (document.getElementById('activityLogModal')?.classList.contains('visible')) {
+    renderActivityLogModal();
+  }
+}
 
 function getCopilotAuthStateLabel(status) {
   switch (status.state) {
@@ -2218,11 +2276,11 @@ function buildTaskContext(promptText) {
   if (isResearch) {
     return {
       stages: [
-        '🔎 論文・参考文献を検索中...',
-        '📚 文献メタデータを収集中...',
-        '⬇ 関連資料を取得中...',
-        '🧪 エビデンスを整理・比較中...',
-        '📝 レポートを組み立て中...',
+        outputLanguageText('🔎 論文・参考文献を検索中...', '🔎 Searching papers and references...'),
+        outputLanguageText('📚 文献メタデータを収集中...', '📚 Collecting literature metadata...'),
+        outputLanguageText('⬇ 関連資料を取得中...', '⬇ Retrieving supporting materials...'),
+        outputLanguageText('🧪 エビデンスを整理・比較中...', '🧪 Comparing and organizing evidence...'),
+        outputLanguageText('📝 レポートを組み立て中...', '📝 Drafting the report...'),
       ],
     };
   }
@@ -2230,20 +2288,20 @@ function buildTaskContext(promptText) {
   if (isCode) {
     return {
       stages: [
-        '🔍 コードベースを確認中...',
-        '🛠 修正方針を整理中...',
-        '🧪 変更内容を検証中...',
-        '📝 結果をまとめ中...',
+        outputLanguageText('🔍 コードベースを確認中...', '🔍 Inspecting the codebase...'),
+        outputLanguageText('🛠 修正方針を整理中...', '🛠 Planning the fix...'),
+        outputLanguageText('🧪 変更内容を検証中...', '🧪 Verifying the changes...'),
+        outputLanguageText('📝 結果をまとめ中...', '📝 Summarizing the results...'),
       ],
     };
   }
 
   return {
     stages: [
-      '🔍 情報を収集中...',
-      '🧭 方針を整理中...',
-      '⚙ 必要な処理を実行中...',
-      '📝 回答をまとめ中...',
+      outputLanguageText('🔍 情報を収集中...', '🔍 Gathering information...'),
+      outputLanguageText('🧭 方針を整理中...', '🧭 Planning the approach...'),
+      outputLanguageText('⚙ 必要な処理を実行中...', '⚙ Running the required actions...'),
+      outputLanguageText('📝 回答をまとめ中...', '📝 Drafting the response...'),
     ],
   };
 }
@@ -2274,7 +2332,7 @@ function startSyntheticStatus(taskId) {
   const task = activeTasks[taskId];
   if (!task || task.syntheticTimer) return;
 
-  const stages = task.context?.stages || ['⏳ エージェント処理中...'];
+  const stages = task.context?.stages || [outputLanguageText('⏳ エージェント処理中...', '⏳ Agent is working...')];
   task.syntheticIndex = 0;
   task.syntheticTimer = setInterval(() => {
     const current = activeTasks[taskId];
@@ -3254,7 +3312,7 @@ function showStatusPanel(taskId) {
       '<div class="asp-progress"><div class="asp-progress-fill indeterminate" id="asp-fill-' + sid + '"></div></div>' +
       '<div class="asp-body">' +
         '<span class="asp-spinner"></span>' +
-        '<span class="asp-step-text" id="asp-step-' + sid + '">エージェント起動中...</span>' +
+        '<span class="asp-step-text" id="asp-step-' + sid + '">' + esc(outputLanguageText('エージェント起動中...', 'Agent starting...')) + '</span>' +
         '<span class="asp-elapsed" id="asp-elapsed-' + sid + '">0s</span>' +
       '</div>' +
       '<div class="asp-tools" id="asp-tools-' + sid + '"></div>' +
@@ -3403,7 +3461,7 @@ function syncActivityTaskFilterOptions(items) {
     .filter(Boolean))]
     .sort((left, right) => String(right).localeCompare(String(left)));
 
-  select.innerHTML = '<option value="all">すべてのタスク</option>'
+  select.innerHTML = `<option value="all">${esc(outputLanguageText('すべてのタスク', 'All tasks'))}</option>`
     + taskIds.map(taskId => `<option value="${esc(taskId)}">${esc(taskId)}</option>`).join('');
 
   select.value = taskIds.includes(previousValue) ? previousValue : 'all';
@@ -3411,14 +3469,14 @@ function syncActivityTaskFilterOptions(items) {
 
 function formatActivityBadge(category) {
   const map = {
-    task: 'タスク',
-    tool: 'ツール',
-    command: 'コマンド',
-    file: 'ファイル',
-    model: 'モデル',
-    system: 'システム',
+    task: outputLanguageText('タスク', 'Task'),
+    tool: outputLanguageText('ツール', 'Tool'),
+    command: outputLanguageText('コマンド', 'Command'),
+    file: outputLanguageText('ファイル', 'File'),
+    model: outputLanguageText('モデル', 'Model'),
+    system: outputLanguageText('システム', 'System'),
   };
-  return map[category] || (category || 'アクティビティ');
+  return map[category] || (category || outputLanguageText('アクティビティ', 'Activity'));
 }
 
 function formatActivityDisplayMessage(item) {
@@ -3426,12 +3484,12 @@ function formatActivityDisplayMessage(item) {
   if (item.category === 'task') {
     const taskPrompt = String(item.taskPrompt || '').trim();
     const actionLabels = {
-      start: 'タスクを開始',
-      complete: 'タスク完了',
-      error: 'タスク失敗',
-      cancel: 'タスク中止',
+      start: outputLanguageText('タスクを開始', 'Task started'),
+      complete: outputLanguageText('タスク完了', 'Task completed'),
+      error: outputLanguageText('タスク失敗', 'Task failed'),
+      cancel: outputLanguageText('タスク中止', 'Task cancelled'),
     };
-    const prefix = actionLabels[item.action] || 'タスク';
+    const prefix = actionLabels[item.action] || outputLanguageText('タスク', 'Task');
     return taskPrompt ? `${prefix}: ${taskPrompt}` : baseMessage;
   }
   if (item.category !== 'file') return baseMessage;
@@ -3440,16 +3498,16 @@ function formatActivityDisplayMessage(item) {
   if (!fileName) return baseMessage;
 
   const actionLabels = {
-    read: 'ファイルを読込',
-    create: 'ファイルを作成',
-    mkdir: 'ディレクトリを作成',
-    update: 'ファイルを更新',
-    created: 'ファイルを作成済み',
-    modified: 'ファイルを更新済み',
-    deleted: 'ファイルを削除',
-    list: 'ディレクトリ一覧を取得',
+    read: outputLanguageText('ファイルを読込', 'Read file'),
+    create: outputLanguageText('ファイルを作成', 'Create file'),
+    mkdir: outputLanguageText('ディレクトリを作成', 'Create directory'),
+    update: outputLanguageText('ファイルを更新', 'Update file'),
+    created: outputLanguageText('ファイルを作成済み', 'Created file'),
+    modified: outputLanguageText('ファイルを更新済み', 'Modified file'),
+    deleted: outputLanguageText('ファイルを削除', 'Deleted file'),
+    list: outputLanguageText('ディレクトリ一覧を取得', 'List directory'),
   };
-  const prefix = actionLabels[item.action] || baseMessage.split(':')[0] || 'ファイル操作';
+  const prefix = actionLabels[item.action] || baseMessage.split(':')[0] || outputLanguageText('ファイル操作', 'File action');
   return `${prefix}: ${fileName}`;
 }
 
@@ -3477,32 +3535,36 @@ function renderActivityLogModal() {
 
   const allItems = getMergedActivityLogItems()
     .filter(item => !currentExpId || item.experimentId === currentExpId);
+  updateActivityLogControls();
   syncActivityTaskFilterOptions(allItems);
   const items = getActivityLogItems();
   const totalTasks = new Set(allItems.map(item => item.taskId).filter(Boolean)).size;
   summary.textContent = allItems.length
-    ? `${items.length}/${allItems.length} 件を表示中${totalTasks ? ` • ${totalTasks} タスク` : ''}`
-    : 'まだ Activity はありません。';
+    ? outputLanguageText(
+        `${items.length}/${allItems.length} 件を表示中${totalTasks ? ` • ${totalTasks} タスク` : ''}`,
+        `Showing ${items.length}/${allItems.length}${totalTasks ? ` • ${totalTasks} tasks` : ''}`,
+      )
+    : outputLanguageText('まだ Activity はありません。', 'No activity yet.');
 
   if (!items.length) {
-    list.innerHTML = '<div class="activity-log-empty">現在のフィルタに一致する Activity はありません。</div>';
+    list.innerHTML = `<div class="activity-log-empty">${esc(outputLanguageText('現在のフィルタに一致する Activity はありません。', 'No activity matches the current filters.'))}</div>`;
     return;
   }
 
   list.innerHTML = items.map(item => {
-    const time = item.timestamp ? new Date(item.timestamp).toLocaleString('ja-JP') : '—';
+    const time = item.timestamp ? new Date(item.timestamp).toLocaleString(getOutputLanguageLocale()) : '—';
     const message = formatActivityDisplayMessage(item);
     const rawDetail = formatActivityRawDetail(item, message);
     const filePath = item.filePath || extractFilePathFromStatusMessage(item.message);
     const fileName = getPathLeaf(filePath);
     const meta = [
-      item.taskId ? `タスク: ${item.taskId}` : '',
-      item.taskPrompt ? `内容: ${item.taskPrompt}` : '',
-      item.toolName ? `ツール: ${item.toolName}` : '',
-      fileName ? `ファイル: ${fileName}` : '',
-      filePath && filePath !== fileName ? `パス: ${filePath}` : '',
-      item.command ? `コマンド: ${item.command}` : '',
-      item.status ? `状態: ${item.status}` : '',
+      item.taskId ? `${outputLanguageText('タスク', 'Task')}: ${item.taskId}` : '',
+      item.taskPrompt ? `${outputLanguageText('内容', 'Prompt')}: ${item.taskPrompt}` : '',
+      item.toolName ? `${outputLanguageText('ツール', 'Tool')}: ${item.toolName}` : '',
+      fileName ? `${outputLanguageText('ファイル', 'File')}: ${fileName}` : '',
+      filePath && filePath !== fileName ? `${outputLanguageText('パス', 'Path')}: ${filePath}` : '',
+      item.command ? `${outputLanguageText('コマンド', 'Command')}: ${item.command}` : '',
+      item.status ? `${outputLanguageText('状態', 'Status')}: ${item.status}` : '',
     ].filter(Boolean);
     return `<div class="activity-log-item">
       <div class="activity-log-head">
@@ -3596,14 +3658,14 @@ async function showBenchmarkRunsModal() {
 }
 
 function humanizeToolName(toolName) {
-  if (!toolName) return 'ツール';
+  if (!toolName) return outputLanguageText('ツール', 'Tool');
   const normalized = String(toolName).replace(/^ToolUniverse-/, '');
   const labelMap = {
-    'tool': 'ツール実行',
-    'report_intent': '方針整理',
-    'find_tools': 'ツール選定',
-    'execute_tool': '文献検索',
-    'web_search': 'Web検索',
+    'tool': outputLanguageText('ツール実行', 'Tool run'),
+    'report_intent': outputLanguageText('方針整理', 'Intent planning'),
+    'find_tools': outputLanguageText('ツール選定', 'Tool selection'),
+    'execute_tool': outputLanguageText('文献検索', 'Literature search'),
+    'web_search': outputLanguageText('Web検索', 'Web search'),
     'github-mcp-server': 'GitHub',
     'ToolUniverse': 'ToolUniverse',
   };
@@ -3619,12 +3681,12 @@ function humanizeStatusSummary(summary) {
   let text = String(summary).trim();
   if (!text) return '';
   const replacements = [
-    [/^Searching literature tools$/i, '文献検索の進め方を整理中'],
-    [/^Finding literature search tools$/i, '利用できる文献検索手段を確認中'],
-    [/^Searching CRISPR base editing papers$/i, 'CRISPR base editing 関連論文を検索中'],
-    [/^CRISPR base editing landmark representative papers seminal publications$/i, 'CRISPR base editing 関連論文を検索中'],
-    [/^OpenAlex literature search academic papers$/i, 'OpenAlex で学術論文を検索中'],
-    [/^academic literature search OpenAlex papers$/i, 'OpenAlex で学術論文を検索中'],
+    [/^Searching literature tools$/i, outputLanguageText('文献検索の進め方を整理中', 'Planning the literature search approach')],
+    [/^Finding literature search tools$/i, outputLanguageText('利用できる文献検索手段を確認中', 'Finding literature search tools')],
+    [/^Searching CRISPR base editing papers$/i, outputLanguageText('CRISPR base editing 関連論文を検索中', 'Searching CRISPR base editing papers')],
+    [/^CRISPR base editing landmark representative papers seminal publications$/i, outputLanguageText('CRISPR base editing 関連論文を検索中', 'Searching CRISPR base editing papers')],
+    [/^OpenAlex literature search academic papers$/i, outputLanguageText('OpenAlex で学術論文を検索中', 'Searching academic papers on OpenAlex')],
+    [/^academic literature search OpenAlex papers$/i, outputLanguageText('OpenAlex で学術論文を検索中', 'Searching academic papers on OpenAlex')],
   ];
   for (const [pattern, replacement] of replacements) {
     if (pattern.test(text)) return replacement;
@@ -3646,95 +3708,73 @@ function addStatusToolChip(taskId, toolName) {
 
 function formatFriendlyStatus(line) {
   if (line === '__container_spawned__' || line === 'Container starting') {
-    return '🐳 コンテナを起動中...';
+    return outputLanguageText('🐳 コンテナを起動中...', '🐳 Starting container...');
   }
 
   let match = line.match(/^Executing command:\s+(.+)$/i);
   if (match) {
-    return '⌨️ コマンドを実行: ' + match[1];
+    return outputLanguageText('⌨️ コマンドを実行: ', '⌨️ Executing command: ') + match[1];
   }
 
   match = line.match(/^Command detail:\s+(.+)$/i);
   if (match) {
-    return '⌨️ コマンド詳細: ' + match[1];
+    return outputLanguageText('⌨️ コマンド詳細: ', '⌨️ Command detail: ') + match[1];
   }
 
   match = line.match(/^Command finished$/i);
   if (match) {
-    return '✅ コマンド実行が完了しました';
+    return outputLanguageText('✅ コマンド実行が完了しました', '✅ Command finished');
   }
 
   match = line.match(/^Reading file:\s+(.+)$/i);
-  if (match) {
-    return '📄 ファイルを読込: ' + match[1];
-  }
+  if (match) return outputLanguageText('📄 ファイルを読込: ', '📄 Reading file: ') + match[1];
 
   match = line.match(/^Creating file:\s+(.+)$/i);
-  if (match) {
-    return '🆕 ファイルを作成: ' + match[1];
-  }
+  if (match) return outputLanguageText('🆕 ファイルを作成: ', '🆕 Creating file: ') + match[1];
 
   match = line.match(/^Creating directory:\s+(.+)$/i);
-  if (match) {
-    return '📁 ディレクトリを作成: ' + match[1];
-  }
+  if (match) return outputLanguageText('📁 ディレクトリを作成: ', '📁 Creating directory: ') + match[1];
 
   match = line.match(/^Updating file:\s+(.+)$/i);
-  if (match) {
-    return '🛠 ファイルを更新: ' + match[1];
-  }
+  if (match) return outputLanguageText('🛠 ファイルを更新: ', '🛠 Updating file: ') + match[1];
 
   match = line.match(/^Created file:\s+(.+)$/i);
-  if (match) {
-    return '🆕 作成されたファイル: ' + match[1];
-  }
+  if (match) return outputLanguageText('🆕 作成されたファイル: ', '🆕 Created file: ') + match[1];
 
   match = line.match(/^Modified file:\s+(.+)$/i);
-  if (match) {
-    return '✏️ 更新されたファイル: ' + match[1];
-  }
+  if (match) return outputLanguageText('✏️ 更新されたファイル: ', '✏️ Modified file: ') + match[1];
 
   match = line.match(/^Deleted file:\s+(.+)$/i);
-  if (match) {
-    return '🗑 削除されたファイル: ' + match[1];
-  }
+  if (match) return outputLanguageText('🗑 削除されたファイル: ', '🗑 Deleted file: ') + match[1];
 
   match = line.match(/^Listing directory:\s+(.+)$/i);
-  if (match) {
-    return '📂 ディレクトリ一覧を取得: ' + match[1];
-  }
+  if (match) return outputLanguageText('📂 ディレクトリ一覧を取得: ', '📂 Listing directory: ') + match[1];
 
   match = line.match(/^Checking errors:\s+(.+)$/i);
-  if (match) {
-    return '🩺 エラー確認: ' + match[1];
-  }
+  if (match) return outputLanguageText('🩺 エラー確認: ', '🩺 Checking errors: ') + match[1];
 
   match = line.match(/^MCP\s+(.+?):\s+connected$/i);
-  if (match) {
-    return '🧩 ' + humanizeToolName(match[1]) + ' に接続しました';
-  }
+  if (match) return outputLanguageText('🧩 ' + humanizeToolName(match[1]) + ' に接続しました', '🧩 Connected to ' + humanizeToolName(match[1]));
 
   match = line.match(/^Model selected:\s+(.+)$/i);
-  if (match) {
-    return '🧠 モデルを選択しました: ' + match[1];
-  }
+  if (match) return outputLanguageText('🧠 モデルを選択しました: ', '🧠 Model selected: ') + match[1];
 
   match = line.match(/^Calling\s+report_intent(?::\s*(.+))?$/i);
   if (match) {
     const summary = humanizeStatusSummary(match[1]);
-    return summary ? '🧭 ' + summary : '🧭 方針を整理中...';
+    return summary ? '🧭 ' + summary : outputLanguageText('🧭 方針を整理中...', '🧭 Planning the approach...');
   }
 
   match = line.match(/^Calling\s+ToolUniverse-find_tools(?::\s*(.+))?$/i);
   if (match) {
     const summary = humanizeStatusSummary(match[1]);
-    return summary ? '🔎 ' + summary : '🔎 利用する検索ツールを選定中...';
+    return summary ? '🔎 ' + summary : outputLanguageText('🔎 利用する検索ツールを選定中...', '🔎 Selecting search tools...');
   }
 
   match = line.match(/^Calling\s+ToolUniverse-execute_tool(?::\s*(.+))?$/i);
   if (match) {
     const summary = humanizeStatusSummary(match[1]);
-    return summary ? '📚 ' + summary : '📚 文献データベースを検索中...';
+    return summary ? '📚 ' + summary : outputLanguageText('📚 文献データベースを検索中...', '📚 Searching literature databases...');
   }
 
   match = line.match(/^Calling\s+web_search(?::\s*(.+))?$/i);
@@ -3743,8 +3783,8 @@ function formatFriendlyStatus(line) {
     const summary = humanizeStatusSummary(rawSummary);
     if (summary) return '📚 ' + summary;
     return isLiteratureSearchText(rawSummary)
-      ? '📚 文献データベースを検索中...'
-      : '🌐 Web検索を実行中...';
+      ? outputLanguageText('📚 文献データベースを検索中...', '📚 Searching literature databases...')
+      : outputLanguageText('🌐 Web検索を実行中...', '🌐 Running web search...');
   }
 
   match = line.match(/^Calling\s+(.+?)(?::\s*(.+))?$/i);
@@ -3754,16 +3794,18 @@ function formatFriendlyStatus(line) {
     if (summary && isLiteratureSearchText(summary)) {
       return '📚 ' + summary;
     }
-    return summary ? '🔧 ' + toolLabel + ' を実行中: ' + summary : '🔧 ' + toolLabel + ' を実行中...';
+    return summary
+      ? outputLanguageText('🔧 ' + toolLabel + ' を実行中: ' + summary, '🔧 Running ' + toolLabel + ': ' + summary)
+      : outputLanguageText('🔧 ' + toolLabel + ' を実行中...', '🔧 Running ' + toolLabel + '...');
   }
 
   if (/^Completed tool$/i.test(line)) {
-    return '✅ ツール実行が完了しました';
+    return outputLanguageText('✅ ツール実行が完了しました', '✅ Tool execution completed');
   }
 
   match = line.match(/^Completed\s+(.+)$/i);
   if (match) {
-    return '✅ ' + humanizeToolName(match[1]) + ' が完了しました';
+    return outputLanguageText('✅ ' + humanizeToolName(match[1]) + ' が完了しました', '✅ Completed ' + humanizeToolName(match[1]));
   }
 
   return null;
@@ -3783,34 +3825,37 @@ function updateStatusPanelLine(taskId, line) {
 
   // Handle special server signals
   if (line === '__container_spawned__') {
-    stepEl.textContent = '🐳 コンテナ起動中...';
+    stepEl.textContent = outputLanguageText('🐳 コンテナ起動中...', '🐳 Starting container...');
     return;
   }
   if (line === '__heartbeat__') {
     // No real status received yet — show generic processing text
     const cur = stepEl.textContent;
-    if (cur === 'エージェント起動中...' || cur === '🐳 コンテナ起動中...') {
-      stepEl.textContent = '⏳ エージェント処理中...';
+    if (
+      cur === outputLanguageText('エージェント起動中...', 'Agent starting...')
+      || cur === outputLanguageText('🐳 コンテナ起動中...', '🐳 Starting container...')
+    ) {
+      stepEl.textContent = outputLanguageText('⏳ エージェント処理中...', '⏳ Agent is working...');
     }
     return;
   }
 
   // Map agent-runner log lines to user-friendly status
   const statusMap = [
-    [/MCP config loaded/i, '🧩 ツール設定を読み込み中...'],
-    [/Starting query/i, '🔄 クエリ実行中...'],
-    [/Running copilot/i, '🤖 Copilot 処理中...'],
-    [/Package extraction took/i, '📦 パッケージを展開中...'],
+    [/MCP config loaded/i, outputLanguageText('🧩 ツール設定を読み込み中...', '🧩 Loading tool configuration...')],
+    [/Starting query/i, outputLanguageText('🔄 クエリ実行中...', '🔄 Running query...')],
+    [/Running copilot/i, outputLanguageText('🤖 Copilot 処理中...', '🤖 Copilot is working...')],
+    [/Package extraction took/i, outputLanguageText('📦 パッケージを展開中...', '📦 Extracting package...')],
     [/API time spent:\s*(.+)/i, null], // dynamic
     [/Total usage est:\s*(.+)/i, null],
     [/Total session time:\s*(.+)/i, null],
     [/Total code changes:\s*(.+)/i, null],
-    [/Query ended/i, '✅ クエリ完了、結果を整理中...'],
-    [/Close sentinel/i, '📤 出力を送信中...'],
-    [/Received input/i, '📥 入力を受信、準備中...'],
+    [/Query ended/i, outputLanguageText('✅ クエリ完了、結果を整理中...', '✅ Query finished, preparing results...')],
+    [/Close sentinel/i, outputLanguageText('📤 出力を送信中...', '📤 Sending output...')],
+    [/Received input/i, outputLanguageText('📥 入力を受信、準備中...', '📥 Input received, preparing...')],
     [/Breakdown by AI model/i, null],
-    [/Pulling\s/i, '📦 イメージ取得中...'],
-    [/Downloading/i, '📦 ダウンロード中...'],
+    [/Pulling\s/i, outputLanguageText('📦 イメージ取得中...', '📦 Pulling image...')],
+    [/Downloading/i, outputLanguageText('📦 ダウンロード中...', '📦 Downloading...')],
   ];
 
   // Check Step pattern first (from stdout parsing in agent-runner)
@@ -5440,6 +5485,7 @@ async function showSettings() {
 
   try {
     const settings = await api('/settings');
+    applyOutputLanguagePreference(settings.output_language || 'ja');
     document.getElementById('settingsGithubToken').value = settings.github_token || '';
     document.getElementById('settingsCopilotModel').value = settings.copilot_model || '';
     document.getElementById('settingsGithubMcpTools').value = settings.github_mcp_tools || '';
@@ -5488,6 +5534,7 @@ async function saveSettings() {
     method: 'PUT',
     body: JSON.stringify(settings),
   });
+  applyOutputLanguagePreference(settings.output_language || 'ja');
   void refreshCopilotAuthStatus(true);
   closeModal('settingsModal');
 }
@@ -5590,6 +5637,12 @@ function openMermaidPopup(text) {
 }
 
 async function init() {
+  try {
+    const settings = await api('/settings');
+    applyOutputLanguagePreference(settings.output_language || 'ja');
+  } catch {
+    applyOutputLanguagePreference('ja');
+  }
   if (typeof mermaid !== 'undefined') {
     mermaid.initialize({
       startOnLoad: false,
