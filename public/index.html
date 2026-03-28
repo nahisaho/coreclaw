@@ -1806,6 +1806,30 @@ let persistedProcessHistory = [];
 let currentMemory = null;   // current memory state for the active experiment
 let pendingTaskContexts = [];
 
+function isPlaceholderProcessPrompt(prompt) {
+  return !prompt || prompt === 'Running task';
+}
+
+function mergeProcessHistoryItem(baseTask, overlayTask) {
+  if (!baseTask) return overlayTask;
+  if (!overlayTask) return baseTask;
+
+  const overlayPrompt = overlayTask.prompt;
+  const basePrompt = baseTask.prompt;
+  const prompt = isPlaceholderProcessPrompt(overlayPrompt)
+    ? (basePrompt || overlayPrompt || 'Running task')
+    : overlayPrompt;
+
+  return {
+    ...baseTask,
+    ...overlayTask,
+    prompt,
+    _lastStatus: overlayTask._lastStatus || baseTask._lastStatus || '',
+    startedAt: overlayTask.startedAt || baseTask.startedAt,
+    finishedAt: overlayTask.finishedAt || baseTask.finishedAt || null,
+  };
+}
+
 function getCurrentExperiment() {
   return currentExpId ? experiments.find(e => e.id === currentExpId) : null;
 }
@@ -1980,7 +2004,8 @@ function connectWs() {
       case 'agent_start':
         if (data.taskId) {
           const elapsed0 = Date.now();
-          const context = pendingTaskContexts.shift() || buildTaskContext('');
+          const pendingTask = pendingTaskContexts.shift() || { context: buildTaskContext(''), prompt: '' };
+          const context = pendingTask.context || buildTaskContext('');
           const elapsedTimer = setInterval(() => {
             const elEl = document.getElementById('asp-elapsed-' + data.taskId);
             if (!elEl) { clearInterval(elapsedTimer); return; }
@@ -1992,7 +2017,7 @@ function connectWs() {
             elapsedTimer,
             startedAt: Date.now(),
             experimentId: currentExpId,
-            prompt: '',
+            prompt: pendingTask.prompt || '',
             _lastStatus: '',
             context,
             hasDetailedStatus: false,
@@ -2811,18 +2836,18 @@ function getProcessHistoryItems() {
   for (const task of persistedProcessHistory) {
     if (task.experimentId !== currentExpId) continue;
     if (task.status === 'done') continue;
-    byId.set(task.id, task);
+    byId.set(task.id, mergeProcessHistoryItem(byId.get(task.id), task));
   }
 
   for (const task of activeTaskList) {
     if (task.experimentId !== currentExpId) continue;
     if (task.status !== 'running') continue;
-    byId.set(task.id, task);
+    byId.set(task.id, mergeProcessHistoryItem(byId.get(task.id), task));
   }
 
   for (const [taskId, task] of Object.entries(activeTasks)) {
     if (task.experimentId && task.experimentId !== currentExpId) continue;
-    byId.set(taskId, {
+    byId.set(taskId, mergeProcessHistoryItem(byId.get(taskId), {
       id: taskId,
       experimentId: task.experimentId || currentExpId,
       prompt: task.prompt || task.streamBuffer || 'Running task',
@@ -2830,7 +2855,7 @@ function getProcessHistoryItems() {
       startedAt: typeof task.startedAt === 'number' ? new Date(task.startedAt).toISOString() : (task.startedAt || new Date().toISOString()),
       finishedAt: null,
       _lastStatus: task._lastStatus || '',
-    });
+    }));
   }
 
   return Array.from(byId.values()).sort((left, right) => {
@@ -3260,7 +3285,10 @@ async function sendMessage() {
   const content = (text + fileInfo).trim();
   if (!content) return;
 
-  pendingTaskContexts.push(buildTaskContext(content));
+  pendingTaskContexts.push({
+    context: buildTaskContext(content),
+    prompt: content,
+  });
 
   ws.send(JSON.stringify({
     type: 'chat',

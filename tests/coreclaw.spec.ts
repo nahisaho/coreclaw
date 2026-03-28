@@ -1011,6 +1011,13 @@ test.describe('Chat Flow', () => {
             _lastStatus: 'Should stay hidden',
           },
         ];
+        activeTasks['task-running'] = {
+          experimentId: expId,
+          prompt: '',
+          streamBuffer: '',
+          startedAt: Date.now() - 10_000,
+          _lastStatus: 'placeholder',
+        };
         window.showStatusPanel('task-running');
       }, [currentExperimentId]);
 

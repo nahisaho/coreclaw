@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.45] - 2026-03-28
+
+### Changed
+
+- **Process History lifecycle**: Running tasks are now the only items kept in the database-backed History popup. Completed responses are written to `groups/experiment-*/HISTORY.md`, while cancelled and failed tasks are written to `data/experiments/*/logs/process-history.jsonl` and removed from the DB.
+- **History prompt rendering**: Fixed the History popup so active tasks show the real prompt instead of getting stuck on the placeholder `Running task` label.
+- **Streaming panel width**: The in-progress process panel now matches the prompt input width.
+
 ## [0.1.44] - 2026-03-28
 
 ### Fixed
