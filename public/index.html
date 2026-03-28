@@ -3528,7 +3528,7 @@ async function loadSkillList() {
         ? `<span class="skill-marketplace-status">${esc(s.updateAvailable ? `Update available: ${s.latestVersion || '-'}` : s.latestVersion ? `Marketplace ${s.latestVersion}` : 'Marketplace import')}</span>`
         : '';
       const marketplaceButtons = s.marketplaceImported
-        ? `<button class="btn-skill-action skill-marketplace-btn" onclick="checkMarketplaceSkillUpdate('${esc(s.name)}', this)">Check Update</button>
+        ? `<button class="btn-skill-action skill-marketplace-btn" onclick="checkMarketplaceSkillUpdate('${esc(s.name)}', this)">Check</button>
            <button class="btn-skill-action skill-marketplace-btn" onclick="updateInstalledMarketplaceSkill('${esc(s.marketplaceSlug || s.name)}', this)" ${s.updateAvailable ? '' : 'disabled'}>${s.updateAvailable ? 'Update' : 'Up to date'}</button>`
         : '';
       return `
@@ -3677,7 +3677,7 @@ async function importMarketplaceSkill(groupName, button) {
 }
 
 async function checkMarketplaceSkillUpdate(skillName, button) {
-  const actionLabel = button?.textContent || 'Check Update';
+  const actionLabel = button?.textContent || 'Check';
   if (button) {
     button.disabled = true;
     button.textContent = 'Checking...';
@@ -4383,7 +4383,6 @@ async function updateComponent(component) {
     } else {
       btn.textContent = '❌ Failed';
       btn.classList.add('error');
-      alert(result.message);
       setTimeout(() => { btn.textContent = origText; btn.disabled = false; btn.className = 'btn-update'; }, 3000);
     }
   } catch (err) {

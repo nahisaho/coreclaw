@@ -529,7 +529,7 @@ test.describe('Settings', () => {
     const skills = page.locator('#skillList');
     await expect(skills).toContainText('Version v1.2.3');
     await expect(skills).toContainText('Update available: v1.2.4');
-    await expect(skills.locator('button:has-text("Check Update")')).toBeVisible();
+    await expect(skills.locator('button:has-text("Check")')).toBeVisible();
     await expect(page.locator('#skillList').getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
   });
 
@@ -589,11 +589,63 @@ test.describe('Settings', () => {
     await page.goto('/');
     await page.click('.settings-btn');
     await page.click('button:has-text("Skills")');
-    await page.locator('#skillList button:has-text("Check Update")').click();
+    await page.locator('#skillList button:has-text("Check")').click();
 
     const skills = page.locator('#skillList');
     await expect(skills).toContainText('Update available: v1.2.4');
     await expect(page.locator('#skillList').getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
+  });
+
+  test('coreclaw update failure does not show a blocking popup', async ({ page }) => {
+    let dialogSeen = false;
+
+    await page.route('**/api/versions', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          coreclaw: { version: '0.1.40', description: 'CoreClaw' },
+          copilot: { version: '1.0.0', description: 'GitHub Copilot CLI' },
+        }),
+      });
+    });
+    await page.route('**/api/check/coreclaw', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          available: true,
+          current: '0.1.40',
+          latest: '0.1.41',
+          message: 'v0.1.41 available',
+        }),
+      });
+    });
+    await page.route('**/api/update/coreclaw', async (route) => {
+      await route.fulfill({
+        status: 400,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          ok: false,
+          message: 'Update failed',
+        }),
+      });
+    });
+
+    page.on('dialog', async (dialog) => {
+      dialogSeen = true;
+      await dialog.dismiss();
+    });
+
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("Updates")');
+    await page.locator('#check-coreclaw').click();
+    await expect(page.locator('#update-coreclaw')).toBeEnabled();
+    await page.locator('#update-coreclaw').click();
+    await page.waitForTimeout(200);
+
+    expect(dialogSeen).toBe(false);
   });
 
   test('MCP servers persist via settings save/reload', async ({ page }) => {

@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.41] - 2026-03-28
+
+### Changed
+
+- **Non-modal update actions**: The imported skill action label in Settings → Skills is now `Check`, and failed CoreClaw updates in Settings → Updates no longer open a blocking browser popup.
+
 ## [0.1.40] - 2026-03-28
 
 ### Changed
