@@ -650,6 +650,41 @@ test.describe('Settings', () => {
     await expect(updateButton).toBeDisabled();
   });
 
+  test('keeps marketplace import Update disabled when no update is available', async ({ page }) => {
+    await page.route('**/api/skills', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([]),
+      });
+    });
+    await page.route('**/api/skills/marketplace', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            slug: 'scientist',
+            name: 'Scientist',
+            description: 'Research pack',
+            icon: '🔬',
+            version: 'v1.2.4',
+            count: 196,
+            installed: true,
+            updateAvailable: false,
+          },
+        ]),
+      });
+    });
+
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('button:has-text("Skills")');
+
+    const updateButton = page.locator('#marketplaceSkillList').getByRole('button', { name: 'Update', exact: true });
+    await expect(updateButton).toBeDisabled();
+  });
+
   test('checks marketplace update status for imported skills', async ({ page }) => {
     let skillCalls = 0;
     await page.route('**/api/skills', async (route) => {

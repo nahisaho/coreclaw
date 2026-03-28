@@ -1562,7 +1562,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   if (method === 'GET' && pathname === '/api/skills/marketplace') {
     try {
       const groups = await listMarketplaceSkillGroups();
-      sendJson(res, 200, groups);
+      const groupsWithStatus = groups.map((group) => {
+        const importMeta = getMarketplaceImportMetadata(group.slug);
+        const currentVersion = importMeta?.version || '';
+        return {
+          ...group,
+          updateAvailable: Boolean(
+            group.installed
+            && currentVersion
+            && group.version
+            && isVersionNewer(group.version, currentVersion),
+          ),
+        };
+      });
+      sendJson(res, 200, groupsWithStatus);
     } catch (err) {
       logger.error({ err }, 'Failed to list marketplace skills');
       sendJson(res, 502, { error: 'Failed to load marketplace skills' });

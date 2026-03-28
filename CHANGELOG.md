@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.51] - 2026-03-29
+
+### Fixed
+
+- **Marketplace Import Update button state**: Settings → Skills の Marketplace Import 一覧でも、アップデート不可のときは `Update` ボタンが disabled になるよう統一しました。
+
 ## [0.1.50] - 2026-03-29
 
 ### Fixed

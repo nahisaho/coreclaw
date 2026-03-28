@@ -4623,7 +4623,7 @@ function renderMarketplaceSkillList() {
         <span class="marketplace-count">${group.count || 0} skills</span>
         <button class="marketplace-info-btn" onclick="showMarketplaceInfo('${esc(group.slug)}')" title="Show description">info</button>
         ${group.installed ? '<span class="marketplace-installed">Installed</span>' : ''}
-        <button class="btn-skill-action marketplace-import-btn" onclick="importMarketplaceSkill(\'${esc(group.slug)}\', this)">${group.installed ? 'Update' : 'Import'}</button>
+        <button class="btn-skill-action marketplace-import-btn" onclick="importMarketplaceSkill(\'${esc(group.slug)}\', this)" ${group.installed && !group.updateAvailable ? 'disabled' : ''}>${group.installed ? 'Update' : 'Import'}</button>
       </div>
     </div>
   `).join('');
