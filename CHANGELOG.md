@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.49] - 2026-03-29
+
+### Fixed
+
+- **Marketplace refresh updates installed skill status**: Settings → Skills → Refresh Marketplace now reloads both marketplace cards and installed skill cards, so imported skills immediately show the latest marketplace version and update availability.
+- **Update button enablement**: Imported skill `Update` buttons in Settings → Skills are now disabled unless a marketplace update is actually available.
+
 ## [0.1.48] - 2026-03-29
 
 ### Added

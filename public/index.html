@@ -1879,7 +1879,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
                 <div class="marketplace-title">Marketplace Import</div>
                 <div class="field-hint">Import official skill packs from nahisaho/coreclaw-marketplace.</div>
               </div>
-              <button class="btn-skill-action" onclick="loadMarketplaceSkillList(true)">🔄 Refresh Marketplace</button>
+              <button class="btn-skill-action" onclick="refreshMarketplaceSkills(this)">🔄 Refresh Marketplace</button>
             </div>
             <div class="marketplace-search">
               <input type="text" id="marketplaceSearchInput" placeholder="Search marketplace skills by name or description" oninput="filterMarketplaceSkills(this.value)">
@@ -4511,7 +4511,7 @@ async function loadSkillList() {
         : '';
       const marketplaceButtons = s.marketplaceImported
         ? `<button class="btn-skill-action skill-marketplace-btn" onclick="checkMarketplaceSkillUpdate('${esc(s.name)}', this)">Check</button>
-           <button class="btn-skill-action skill-marketplace-btn" onclick="updateInstalledMarketplaceSkill('${esc(s.marketplaceSlug || s.name)}', this)" ${s.updateAvailable ? '' : 'disabled'}>${s.updateAvailable ? 'Update' : 'Up to date'}</button>`
+          <button class="btn-skill-action skill-marketplace-btn" onclick="updateInstalledMarketplaceSkill('${esc(s.marketplaceSlug || s.name)}', this)" ${s.updateAvailable ? '' : 'disabled'}>Update</button>`
         : '';
       return `
       <div class="skill-card" id="skill-card-${esc(s.name)}">
@@ -4564,6 +4564,23 @@ async function loadMarketplaceSkillList(force = false) {
   }
 
   renderMarketplaceSkillList();
+}
+
+async function refreshMarketplaceSkills(button) {
+  const actionLabel = button?.textContent || '🔄 Refresh Marketplace';
+  if (button) {
+    button.disabled = true;
+    button.textContent = 'Refreshing...';
+  }
+
+  try {
+    await Promise.all([loadSkillList(), loadMarketplaceSkillList(true)]);
+  } finally {
+    if (button) {
+      button.disabled = false;
+      button.textContent = actionLabel;
+    }
+  }
 }
 
 function filterMarketplaceSkills(value = '') {
