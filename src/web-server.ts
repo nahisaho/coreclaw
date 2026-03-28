@@ -448,6 +448,7 @@ type AgentRunner = (
 ) => void;
 
 type AgentStopper = (experimentId: string, taskId: string) => void;
+type AppShutdown = (reason: string) => Promise<void>;
 
 /**
  * Callback registered by the orchestrator to run a memory summarisation pass.
@@ -462,6 +463,7 @@ type MemorySummarizer = (
 
 let agentRunner: AgentRunner | null = null;
 let agentStopper: AgentStopper | null = null;
+let appShutdown: AppShutdown | null = null;
 let memorySummarizer: MemorySummarizer | null = null;
 
 export function setAgentRunner(runner: AgentRunner): void {
@@ -470,6 +472,10 @@ export function setAgentRunner(runner: AgentRunner): void {
 
 export function setAgentStopper(stopper: AgentStopper): void {
   agentStopper = stopper;
+}
+
+export function setAppShutdown(shutdown: AppShutdown): void {
+  appShutdown = shutdown;
 }
 
 export function setMemorySummarizer(summarizer: MemorySummarizer): void {
@@ -1052,6 +1058,25 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     const component = updateMatch[1];
     const result = await updateComponent(component);
     sendJson(res, result.ok ? 200 : 400, result);
+    return;
+  }
+
+  // POST /api/shutdown — stop the current CoreClaw process
+  if (method === 'POST' && pathname === '/api/shutdown') {
+    if (!appShutdown) {
+      sendJson(res, 503, { ok: false, message: 'Shutdown is not available' });
+      return;
+    }
+
+    res.once('finish', () => {
+      setTimeout(() => {
+        void appShutdown('api-shutdown').catch((err) => {
+          logger.error({ err }, 'App shutdown callback failed');
+        });
+      }, 50);
+    });
+
+    sendJson(res, 200, { ok: true, message: 'Shutting down CoreClaw' });
     return;
   }
 

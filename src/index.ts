@@ -54,7 +54,7 @@ import {
   shouldDropMessage,
 } from './sender-allowlist.js';
 import { startSchedulerLoop } from './task-scheduler.js';
-import { startWebServer, setAgentRunner, setAgentStopper, setMemorySummarizer, WEB_PORT } from './web-server.js';
+import { startWebServer, setAgentRunner, setAgentStopper, setAppShutdown, setMemorySummarizer, WEB_PORT } from './web-server.js';
 import {
   addMessage as addExperimentMessage,
   getArtifactsDir,
@@ -621,6 +621,7 @@ async function main(): Promise<void> {
     for (const ch of channels) await ch.disconnect();
     process.exit(0);
   };
+  setAppShutdown(shutdown);
   process.on('SIGTERM', () => shutdown('SIGTERM'));
   process.on('SIGINT', () => shutdown('SIGINT'));
 

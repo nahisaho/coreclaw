@@ -218,6 +218,9 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .sidebar-footer-top {
   display: flex; align-items: center; justify-content: space-between;
 }
+.sidebar-footer-actions {
+  display: flex; align-items: center; gap: 8px;
+}
 .settings-btn {
   background: var(--bg-tertiary); border: 1px solid var(--border);
   color: var(--text-secondary); width: 32px; height: 32px; border-radius: var(--radius);
@@ -225,6 +228,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   justify-content: center; transition: all .15s;
 }
 .settings-btn:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--text-muted); }
+.stop-btn {
+  background: #4a1f1f; border: 1px solid #7a3030;
+  color: #ffd6d6; min-width: 56px; height: 32px; border-radius: var(--radius);
+  cursor: pointer; font-size: 12px; font-weight: 600; padding: 0 12px;
+  display: inline-flex; align-items: center; justify-content: center; transition: all .15s;
+}
+.stop-btn:hover { background: #5d2626; border-color: #9a4343; color: #fff1f1; }
+.stop-btn:disabled { opacity: .75; cursor: default; }
 
 /* Settings modal overrides */
 .modal.settings-modal { min-width: 560px; max-width: 640px; max-height: 85vh; display: flex; flex-direction: column; overflow: hidden; }
@@ -1249,7 +1260,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
     <div class="sidebar-footer">
       <div class="sidebar-footer-top">
         <span><span id="skillCount">0</span> Agent Skills</span>
-        <button class="settings-btn" onclick="showSettings()" title="Settings">⚙️</button>
+        <div class="sidebar-footer-actions">
+          <button class="settings-btn" onclick="showSettings()" title="Settings">⚙️</button>
+          <button class="stop-btn" id="stopServerBtn" onclick="stopWebServer()" title="Stop web server">Stop</button>
+        </div>
       </div>
     </div>
   </aside>
@@ -4389,6 +4403,30 @@ async function updateComponent(component) {
     btn.textContent = '❌ Error';
     btn.classList.add('error');
     setTimeout(() => { btn.textContent = origText; btn.disabled = false; btn.className = 'btn-update'; }, 3000);
+  }
+}
+
+async function stopWebServer() {
+  const btn = document.getElementById('stopServerBtn');
+  if (!btn || btn.disabled) return;
+
+  const originalText = btn.textContent;
+  btn.textContent = 'Stopping...';
+  btn.disabled = true;
+
+  try {
+    const result = await api('/shutdown', { method: 'POST' });
+    if (result && result.ok) {
+      btn.textContent = 'Stopped';
+      return;
+    }
+    throw new Error(result?.message || 'Shutdown failed');
+  } catch (err) {
+    btn.textContent = 'Error';
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }, 3000);
   }
 }
 

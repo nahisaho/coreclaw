@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.42] - 2026-03-28
+
+### Added
+
+- **Sidebar stop control**: Added a `Stop` button next to the sidebar Settings button that shuts down the running CoreClaw web server process through the UI.
+
 ## [0.1.41] - 2026-03-28
 
 ### Changed

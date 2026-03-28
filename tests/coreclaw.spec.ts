@@ -183,6 +183,25 @@ test.describe('Settings', () => {
     await expect(page.locator('#settingsModal')).not.toHaveClass(/visible/);
   });
 
+  test('stop button requests web server shutdown', async ({ page }) => {
+    let shutdownRequested = false;
+
+    await page.route('**/api/shutdown', async (route) => {
+      shutdownRequested = true;
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ ok: true, message: 'Shutting down CoreClaw' }),
+      });
+    });
+
+    await page.goto('/');
+    await page.locator('#stopServerBtn').click();
+
+    await expect(page.locator('#stopServerBtn')).toHaveText('Stopped');
+    expect(shutdownRequested).toBe(true);
+  });
+
   test('provider toggle switches between OpenAI / Azure / Ollama', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');
