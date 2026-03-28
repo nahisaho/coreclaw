@@ -20,6 +20,7 @@ export interface MarketplaceSkillGroup {
   name: string;
   description: string;
   icon: string;
+  version: string;
   count: number;
   installed: boolean;
 }
@@ -34,6 +35,10 @@ interface MarketplaceGroupMetadata {
   description?: string;
   icon?: string;
   count?: number;
+}
+
+interface MarketplaceSkillMetadata {
+  version?: string;
 }
 
 /**
@@ -119,6 +124,7 @@ export async function listMarketplaceSkillGroups(fetchImpl: typeof fetch = fetch
 
   const groups = await Promise.all(skillGroups.map(async (entry) => {
     let meta: MarketplaceGroupMetadata = {};
+    let skillMeta: MarketplaceSkillMetadata = {};
     try {
       meta = await fetchMarketplaceJson<MarketplaceGroupMetadata>(
         `${MARKETPLACE_RAW_BASE}/${MARKETPLACE_SKILLS_PATH}/${entry.name}/group.json`,
@@ -128,11 +134,21 @@ export async function listMarketplaceSkillGroups(fetchImpl: typeof fetch = fetch
       logger.warn({ group: entry.name, err }, 'Failed to read marketplace group.json');
     }
 
+    try {
+      skillMeta = await fetchMarketplaceJson<MarketplaceSkillMetadata>(
+        `${MARKETPLACE_RAW_BASE}/${MARKETPLACE_SKILLS_PATH}/${entry.name}/skill.json`,
+        fetchImpl,
+      );
+    } catch (err) {
+      logger.warn({ group: entry.name, err }, 'Failed to read marketplace skill.json');
+    }
+
     return {
       slug: entry.name,
       name: meta.name?.trim() || entry.name,
       description: meta.description?.trim() || '',
       icon: meta.icon?.trim() || '📦',
+      version: skillMeta.version?.trim() || '',
       count: Number.isFinite(meta.count) ? Number(meta.count) : 0,
       installed: fs.existsSync(path.join(skillsRoot, entry.name, 'SKILL.md')),
     } satisfies MarketplaceSkillGroup;

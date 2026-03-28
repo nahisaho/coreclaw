@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.38] - 2026-03-28
+
+### Added
+
+- **Marketplace skill versions**: Settings → Skills → Marketplace Import now reads each marketplace root `skill.json` and shows its version on the skill card and in the info popup.
+
 ## [0.1.37] - 2026-03-28
 
 ### Removed

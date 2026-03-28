@@ -333,6 +333,7 @@ test.describe('Settings', () => {
             name: 'Scientist',
             description: 'Research pack',
             icon: '🔬',
+            version: 'v1.2.3',
             count: 196,
             installed: false,
           },
@@ -348,6 +349,7 @@ test.describe('Settings', () => {
     await expect(marketplace.locator('.skill-card')).toHaveCount(1);
     await expect(marketplace).toContainText('Scientist');
     await expect(marketplace).toContainText('Research pack');
+    await expect(marketplace).toContainText('Version v1.2.3');
     await expect(marketplace).toContainText('196 skills');
     await expect(marketplace.locator('button:has-text("Import")')).toBeVisible();
   });
@@ -363,6 +365,7 @@ test.describe('Settings', () => {
             name: 'Educationalist',
             description: 'Skills for educators and curriculum design.',
             icon: '📚',
+            version: 'v0.9.0',
             count: 1,
             installed: true,
           },
@@ -377,6 +380,7 @@ test.describe('Settings', () => {
 
     await expect(page.locator('#marketplaceInfoModal')).toHaveClass(/visible/);
     await expect(page.locator('#marketplaceInfoTitle')).toContainText('Educationalist');
+    await expect(page.locator('#marketplaceInfoVersion')).toContainText('Version v0.9.0');
     await expect(page.locator('#marketplaceInfoBody')).toContainText('Skills for educators and curriculum design.');
     await expect(page.locator('#marketplaceInfoInstalled')).toBeVisible();
   });
@@ -392,6 +396,7 @@ test.describe('Settings', () => {
             name: 'Scientist',
             description: 'Research workflows and analysis.',
             icon: '🔬',
+            version: 'v1.2.3',
             count: 196,
             installed: false,
           },
@@ -400,6 +405,7 @@ test.describe('Settings', () => {
             name: 'Educationalist',
             description: 'Skills for educators and curriculum design.',
             icon: '📚',
+            version: 'v0.9.0',
             count: 1,
             installed: false,
           },
@@ -439,6 +445,7 @@ test.describe('Settings', () => {
             name: 'General Assistant',
             description: marketplaceCalls === 1 ? 'First state' : 'Refreshed state',
             icon: '🤖',
+            version: marketplaceCalls === 1 ? 'v0.1.0' : 'v0.2.0',
             count: 1,
             installed: marketplaceCalls === 1,
           },
@@ -452,12 +459,14 @@ test.describe('Settings', () => {
 
     const marketplace = page.locator('#marketplaceSkillList');
     await expect(marketplace).toContainText('First state');
+    await expect(marketplace).toContainText('Version v0.1.0');
     await expect(marketplace).toContainText('Installed');
 
     await page.click('button:has-text("Updates")');
     await page.click('button:has-text("Skills")');
 
     await expect(marketplace).toContainText('Refreshed state');
+    await expect(marketplace).toContainText('Version v0.2.0');
     await expect(marketplace.locator('.marketplace-installed')).toHaveCount(0);
   });
 

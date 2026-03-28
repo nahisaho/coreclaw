@@ -44,12 +44,22 @@ describe('skills-sync marketplace helpers', () => {
           count: 196,
         }), { status: 200 });
       }
+      if (url.endsWith('/scientist/skill.json')) {
+        return new Response(JSON.stringify({
+          version: 'v1.2.3',
+        }), { status: 200 });
+      }
       if (url.endsWith('/consultant/group.json')) {
         return new Response(JSON.stringify({
           name: 'Consultant',
           description: 'Consulting pack',
           icon: '💼',
           count: 42,
+        }), { status: 200 });
+      }
+      if (url.endsWith('/consultant/skill.json')) {
+        return new Response(JSON.stringify({
+          version: 'v0.4.0',
         }), { status: 200 });
       }
       throw new Error(`Unexpected URL: ${url}`);
@@ -62,6 +72,7 @@ describe('skills-sync marketplace helpers', () => {
         name: 'Consultant',
         description: 'Consulting pack',
         icon: '💼',
+        version: 'v0.4.0',
         count: 42,
         installed: false,
       },
@@ -70,6 +81,7 @@ describe('skills-sync marketplace helpers', () => {
         name: 'Scientist',
         description: 'Research pack',
         icon: '🔬',
+        version: 'v1.2.3',
         count: 196,
         installed: true,
       },

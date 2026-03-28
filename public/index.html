@@ -372,7 +372,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .marketplace-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
 .marketplace-list { display: flex; flex-direction: column; gap: 6px; }
 .marketplace-card-meta {
-  display: flex; align-items: center; gap: 8px; margin-left: 12px; flex-shrink: 0;
+  display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: 12px; flex-shrink: 0;
 }
 .marketplace-count {
   font-size: 11px; color: var(--text-muted); white-space: nowrap;
@@ -1670,6 +1670,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
     </div>
     <div class="marketplace-info-meta">
       <span class="marketplace-info-badge" id="marketplaceInfoCount"></span>
+      <span class="marketplace-info-badge" id="marketplaceInfoVersion"></span>
       <span class="marketplace-installed" id="marketplaceInfoInstalled" style="display:none">Installed</span>
     </div>
     <div class="marketplace-info-body" id="marketplaceInfoBody"></div>
@@ -3598,6 +3599,7 @@ function renderMarketplaceSkillList() {
         <div class="skill-card-desc">${esc(group.description || '')}</div>
       </div>
       <div class="marketplace-card-meta">
+        <span class="skill-card-version">Version ${esc(group.version || '-')}</span>
         <span class="marketplace-count">${group.count || 0} skills</span>
         <button class="marketplace-info-btn" onclick="showMarketplaceInfo('${esc(group.slug)}')" title="Show description">info</button>
         ${group.installed ? '<span class="marketplace-installed">Installed</span>' : ''}
@@ -3613,6 +3615,7 @@ function showMarketplaceInfo(groupSlug) {
 
   document.getElementById('marketplaceInfoTitle').textContent = `${group.icon || '📦'} ${group.name}`;
   document.getElementById('marketplaceInfoCount').textContent = `${group.count || 0} skills`;
+  document.getElementById('marketplaceInfoVersion').textContent = `Version ${group.version || '-'}`;
   document.getElementById('marketplaceInfoBody').textContent = group.description || 'No description available.';
 
   const installed = document.getElementById('marketplaceInfoInstalled');
