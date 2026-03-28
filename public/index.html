@@ -726,18 +726,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 }
 .header-btn:hover { background: var(--bg-hover); color: var(--text-primary); }
 .header-btn.danger:hover { color: var(--red); border-color: var(--red); }
-.memory-badge {
-  display: inline-flex; align-items: center; gap: 4px;
-  font-size: 11px; padding: 3px 8px; border-radius: 20px;
-  background: var(--bg-tertiary); border: 1px solid var(--border);
-  color: var(--text-muted); cursor: pointer; transition: all .15s;
-  white-space: nowrap;
-}
-.memory-badge:hover { border-color: var(--accent); color: var(--accent); }
-.memory-badge.has-summary { border-color: var(--green); color: var(--green); }
-.memory-badge.summarizing { border-color: var(--orange); color: var(--orange); animation: pulse 1.5s ease-in-out infinite; }
-@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.5} }
-
 /* Welcome screen */
 .welcome {
   flex: 1; display: flex; flex-direction: column;
@@ -1317,7 +1305,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
     <div class="main-header" id="mainHeader" style="display:none">
       <span class="exp-title editable" id="expTitle" onclick="renameExperiment()"></span>
       <span class="chat-skill-badge" id="chatSkillBadge" onclick="changeChatSkill()" title="Change skill"></span>
-      <span class="memory-badge" id="memoryBadge" onclick="showMemoryModal()" title="会話メモリ管理" style="display:none">🧠 Memory</span>
       <div class="header-actions">
         <button class="header-btn" onclick="showMsgSearch()">🔍 Search</button>
         <button class="header-btn" onclick="showArtifacts()">📁 Artifacts</button>
@@ -1406,23 +1393,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 <!-- Delete Confirmation Modal -->
 <div class="modal-overlay" id="deleteExpModal">
 
-<!-- Memory Management Modal -->
-<div class="modal-overlay" id="memoryModal">
-  <div class="modal">
-    <div class="modal-header">
-      <h3>🧠 会話メモリ</h3>
-      <button class="modal-close" onclick="closeModal('memoryModal')" title="閉じる">✕</button>
-    </div>
-    <div id="memoryContent" style="font-size:13px; color:var(--text-secondary); line-height:1.6;">
-      読み込み中...
-    </div>
-    <div style="margin-top:16px; display:flex; gap:8px; flex-wrap:wrap;">
-      <button class="btn-primary" onclick="triggerManualSummarize()" id="summarizeBtn">📝 今すぐ要約・圧縮</button>
-      <button class="btn-cancel" onclick="clearMemoryData()" style="color:var(--red); border-color:var(--red)">🗑 メモリをクリア</button>
-      <button class="btn-cancel" onclick="closeModal('memoryModal')" style="margin-left:auto">閉じる</button>
-    </div>
-  </div>
-</div>
+
 
   <div class="modal">
     <h3>⚠️ Delete Experiment</h3>
@@ -1967,10 +1938,6 @@ function connectWs() {
         if (data.message) appendMessage(data.message);
         break;
       case 'memory_update':
-        if (data.memory) {
-          currentMemory = data.memory;
-          updateMemoryBadge();
-        }
         break;
     }
   };
@@ -4523,104 +4490,15 @@ async function importSettings(event) {
 }
 
 
-function updateMemoryBadge() {
-  const badge = document.getElementById('memoryBadge');
-  if (!badge) return;
-  if (!currentExpId) { badge.style.display = 'none'; return; }
-  badge.style.display = 'inline-flex';
-  badge.classList.remove('has-summary', 'summarizing');
-  if (!currentMemory) {
-    badge.textContent = '🧠 Memory';
-    badge.title = '会話メモリ管理';
-    return;
-  }
-  const count = currentMemory.summarized_count || 0;
-  if (count > 0) {
-    badge.classList.add('has-summary');
-    badge.textContent = `🧠 ${count}件圧縮済`;
-    badge.title = `会話メモリ管理 — ${count}件が要約済み`;
-  } else {
-    badge.textContent = '🧠 Memory';
-    badge.title = '会話メモリ管理';
-  }
-}
+function updateMemoryBadge() {}
 
-async function showMemoryModal() {
-  if (!currentExpId) return;
-  const modal = document.getElementById('memoryModal');
-  modal.classList.add('visible');
-  await refreshMemoryModal();
-}
 
-async function refreshMemoryModal() {
-  if (!currentExpId) return;
-  const content = document.getElementById('memoryContent');
-  try {
-    const r = await api(`/experiments/${currentExpId}/memory`);
-    currentMemory = r.memory;
-    updateMemoryBadge();
-    const memory = r.memory;
-    const total = r.total_messages;
-    const summarized = memory.summarized_count || 0;
-    const unsummarized = total - summarized;
-    const threshold = 20; // MEMORY_RECENT_PAIRS * 2 = 10, trigger > 12
-    const nextCompressIn = Math.max(0, threshold - unsummarized + 1);
-    const progressPct = Math.min(100, Math.round((unsummarized / threshold) * 100));
-    let html = `<div style="display:grid; grid-template-columns:1fr 1fr; gap:8px 16px; margin-bottom:12px;">
-      <div><span style="color:var(--text-muted)">総メッセージ数:</span> <strong>${total}</strong></div>
-      <div><span style="color:var(--text-muted)">圧縮済み:</span> <strong>${summarized}</strong></div>
-      <div><span style="color:var(--text-muted)">未圧縮:</span> <strong>${unsummarized}</strong></div>
-      <div><span style="color:var(--text-muted)">最終更新:</span> <strong>${memory.updated_at ? new Date(memory.updated_at).toLocaleString('ja-JP') : '—'}</strong></div>
-    </div>
-    <div style="margin-bottom:12px;">
-      <div style="display:flex; justify-content:space-between; font-size:11px; color:var(--text-muted); margin-bottom:4px;">
-        <span>次の自動圧縮まで: あと <strong style="color:var(--text-primary)">${nextCompressIn <= 0 ? '間もなく' : nextCompressIn + '件'}</strong></span>
-        <span>${unsummarized}/${threshold}</span>
-      </div>
-      <div style="height:5px; background:var(--bg-tertiary); border-radius:3px; overflow:hidden;">
-        <div style="height:100%; width:${progressPct}%; background:${progressPct >= 80 ? 'var(--orange)' : 'var(--accent)'}; border-radius:3px; transition:width 0.3s;"></div>
-      </div>
-    </div>`;
-    if (r.is_summarizing) {
-      html += `<div style="color:var(--orange); margin-bottom:12px;">⏳ 要約処理中...</div>`;
-      document.getElementById('summarizeBtn').disabled = true;
-    } else {
-      document.getElementById('summarizeBtn').disabled = false;
-    }
-    if (memory.summary) {
-      html += `<div style="margin-top:8px;"><strong style="font-size:12px; color:var(--text-muted)">現在の要約:</strong>
-        <div style="margin-top:6px; padding:10px; background:var(--bg-tertiary); border-radius:6px; white-space:pre-wrap; font-size:12px; max-height:200px; overflow-y:auto;">${esc(memory.summary)}</div></div>`;
-    } else {
-      html += `<div style="color:var(--text-muted); font-style:italic;">まだ要約はありません。会話が${document.getElementById('memoryThreshold') ? document.getElementById('memoryThreshold').value : 20}件を超えると自動的に圧縮されます。</div>`;
-    }
-    content.innerHTML = html;
-  } catch (e) {
-    content.innerHTML = '<span style="color:var(--red)">メモリ情報の取得に失敗しました。</span>';
-  }
-}
 
-async function triggerManualSummarize() {
-  if (!currentExpId) return;
-  const btn = document.getElementById('summarizeBtn');
-  btn.disabled = true;
-  btn.textContent = '⏳ 要約中...';
-  try {
-    await api(`/experiments/${currentExpId}/memory/summarize`, { method: 'POST' });
-    await refreshMemoryModal();
-  } catch (e) {
-    alert('要約の開始に失敗しました: ' + (e.message || e));
-  }
-  btn.textContent = '📝 今すぐ要約・圧縮';
-}
 
-async function clearMemoryData() {
-  if (!currentExpId) return;
-  if (!confirm('このチャットグループのメモリ（要約）をクリアしますか？\n会話ログは削除されません。')) return;
-  await api(`/experiments/${currentExpId}/memory`, { method: 'DELETE' });
-  currentMemory = null;
-  updateMemoryBadge();
-  await refreshMemoryModal();
-}
+
+
+
+
 
 // ===== Init =====
 // ===== Chat artifact link — delegated click handler =====
