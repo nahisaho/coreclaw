@@ -586,8 +586,6 @@ test.describe('Settings', () => {
       });
     });
 
-    page.on('dialog', (dialog) => dialog.accept());
-
     await page.goto('/');
     await page.click('.settings-btn');
     await page.click('button:has-text("Skills")');

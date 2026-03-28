@@ -3687,16 +3687,12 @@ async function checkMarketplaceSkillUpdate(skillName, button) {
     const res = await fetch('/api/skills/' + encodeURIComponent(skillName) + '/marketplace-status');
     const data = await res.json();
     if (!res.ok) {
-      alert(data.error || 'Failed to check marketplace update');
+      console.error('Failed to check marketplace update', data.error || data);
       return;
     }
     await Promise.all([loadSkillList(), loadMarketplaceSkillList(true)]);
-    alert(data.updateAvailable
-      ? `${skillName}: update available (${data.currentVersion || '-'} -> ${data.latestVersion || '-'})`
-      : `${skillName}: up to date (${data.currentVersion || data.latestVersion || '-'})`);
   } catch (e) {
     console.error('Marketplace update check failed', e);
-    alert('Failed to check marketplace update');
   } finally {
     if (button) {
       button.disabled = false;

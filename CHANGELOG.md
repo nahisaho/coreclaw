@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.40] - 2026-03-28
+
+### Changed
+
+- **Check Update is non-modal**: Settings → Skills no longer shows a blocking browser popup when checking Marketplace updates for imported skills; the result is reflected directly in the skill list.
+
 ## [0.1.39] - 2026-03-28
 
 ### Added
