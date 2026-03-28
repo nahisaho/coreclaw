@@ -868,16 +868,19 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 /* Streaming message */
 .message.streaming .msg-role { display: flex; align-items: center; gap: 8px; }
 .streaming-history-btn,
+.streaming-activity-btn,
 .streaming-stop-btn {
   background: var(--red); color: #fff; border: none; border-radius: 4px;
   padding: 1px 8px; font-size: 11px; cursor: pointer; opacity: 0.85;
 }
-.streaming-history-btn {
+.streaming-history-btn,
+.streaming-activity-btn {
   background: var(--bg-hover);
   color: var(--text-secondary);
   border: 1px solid var(--border);
 }
-.streaming-history-btn:hover {
+.streaming-history-btn:hover,
+.streaming-activity-btn:hover {
   opacity: 1;
   color: var(--text-primary);
   border-color: var(--text-muted);
@@ -995,10 +998,98 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 /* Artifacts modal */
 .modal.artifacts-modal { min-width: 500px; max-width: 600px; max-height: 70vh; display: flex; flex-direction: column; }
 .modal.process-history-modal { min-width: 540px; max-width: 720px; max-height: 75vh; display: flex; flex-direction: column; }
+.modal.activity-log-modal { min-width: 620px; max-width: 860px; max-height: 78vh; display: flex; flex-direction: column; }
 .process-history-summary {
   font-size: 12px;
   color: var(--text-secondary);
   margin-bottom: 12px;
+}
+.activity-log-toolbar {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  margin-bottom: 12px;
+  flex-wrap: wrap;
+}
+.activity-log-filter {
+  min-width: 140px;
+  max-width: 180px;
+}
+.activity-log-search {
+  flex: 1;
+  min-width: 220px;
+}
+.activity-log-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 56vh;
+}
+.activity-log-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 28px;
+  font-size: 13px;
+}
+.activity-log-item {
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.activity-log-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin-bottom: 6px;
+}
+.activity-log-badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.activity-log-badge.task { color: var(--accent); border-color: var(--accent); background: var(--bg-active); }
+.activity-log-badge.tool { color: var(--green); border-color: var(--green); }
+.activity-log-badge.command { color: var(--orange); border-color: var(--orange); }
+.activity-log-badge.file { color: #58a6ff; border-color: #58a6ff; }
+.activity-log-badge.model { color: #d29922; border-color: #d29922; }
+.activity-log-badge.system { color: var(--text-secondary); }
+.activity-log-time {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+}
+.activity-log-message {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  word-break: break-word;
+}
+.activity-log-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.activity-log-raw {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .process-history-list {
   flex: 1;
@@ -1820,6 +1911,35 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   </div>
 </div>
 
+<div class="modal-overlay" id="activityLogModal" onclick="if(event.target===this)closeModal('activityLogModal')">
+  <div class="modal activity-log-modal">
+    <div class="modal-header">
+      <h3>📋 Activity Log</h3>
+      <button class="modal-close" onclick="closeModal('activityLogModal')" title="Close">✕</button>
+    </div>
+    <div class="process-history-summary" id="activityLogSummary"></div>
+    <div class="activity-log-toolbar">
+      <select id="activityLogFilter" class="input-field activity-log-filter" onchange="renderActivityLogModal()">
+        <option value="all">All activities</option>
+        <option value="task">Tasks</option>
+        <option value="tool">Tools</option>
+        <option value="command">Commands</option>
+        <option value="file">Files</option>
+        <option value="model">Models</option>
+        <option value="system">System</option>
+      </select>
+      <select id="activityLogTaskFilter" class="input-field activity-log-filter" onchange="renderActivityLogModal()">
+        <option value="all">All tasks</option>
+      </select>
+      <input id="activityLogSearch" class="input-field activity-log-search" type="text" placeholder="Search message, path, command, tool..." oninput="renderActivityLogModal()" />
+    </div>
+    <div class="activity-log-list" id="activityLogList"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('activityLogModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ===== State =====
 let experiments = [];
@@ -1828,8 +1948,19 @@ let ws = null;
 let activeTasks = {};       // taskId -> { streamBuffer }
 let activeTaskList = [];    // full task list from server
 let persistedProcessHistory = [];
+let persistedActivityEvents = [];
+let liveActivityEvents = [];
 let currentMemory = null;   // current memory state for the active experiment
 let pendingTaskContexts = [];
+
+function mergeActivityEvents(baseEvents, overlayEvents) {
+  const byId = new Map();
+  for (const item of [...(Array.isArray(baseEvents) ? baseEvents : []), ...(Array.isArray(overlayEvents) ? overlayEvents : [])]) {
+    if (!item || !item.id) continue;
+    byId.set(item.id, { ...byId.get(item.id), ...item });
+  }
+  return Array.from(byId.values()).sort((left, right) => new Date(right.timestamp || 0).getTime() - new Date(left.timestamp || 0).getTime());
+}
 
 function mergeStatusHistory(baseHistory, overlayHistory) {
   const merged = [];
@@ -1916,6 +2047,7 @@ function hasDetailedStatusLine(line) {
   if (!line || line === '__heartbeat__' || line === '__container_spawned__') return false;
   return /^Step\s+\d+/i.test(line)
     || /(?:calling|using|querying|searching|downloading|fetching|accessing)\s+/i.test(line)
+    || /(?:executing command|command detail|reading file|creating file|creating directory|updating file|modified file|created file|deleted file|listing directory|checking errors|command finished)/i.test(line)
     || /PubMed|OpenAlex|SemanticScholar|Crossref|ArXiv|EuropePMC|ClinicalTrials|PMC|UniProt|KEGG/i.test(line);
 }
 
@@ -1978,6 +2110,9 @@ function connectWs() {
       activeTaskList = data.tasks;
       if (document.getElementById('processHistoryModal')?.classList.contains('visible')) {
         renderProcessHistoryModal();
+      }
+      if (document.getElementById('activityLogModal')?.classList.contains('visible')) {
+        renderActivityLogModal();
       }
       // Restore activeTasks entries for running tasks in the current group
       for (const task of data.tasks) {
@@ -2096,6 +2231,14 @@ function connectWs() {
           updateStatusPanelLine(data.taskId, data.status);
         }
         break;
+      case 'activity_event':
+        if (data.event) {
+          liveActivityEvents = mergeActivityEvents(liveActivityEvents, [data.event]);
+          if (document.getElementById('activityLogModal')?.classList.contains('visible')) {
+            renderActivityLogModal();
+          }
+        }
+        break;
       case 'agent_done':
         if (data.taskId) {
           if (activeTasks[data.taskId]?.elapsedTimer) clearInterval(activeTasks[data.taskId].elapsedTimer);
@@ -2170,6 +2313,21 @@ async function loadProcessHistory() {
     persistedProcessHistory = [];
   }
   return persistedProcessHistory;
+}
+
+async function loadActivityLog() {
+  if (!currentExpId) {
+    persistedActivityEvents = [];
+    return persistedActivityEvents;
+  }
+  try {
+    const data = await api(`/experiments/${currentExpId}/activity`);
+    persistedActivityEvents = Array.isArray(data.events) ? data.events : [];
+  } catch (err) {
+    console.error('loadActivityLog failed:', err);
+    persistedActivityEvents = [];
+  }
+  return persistedActivityEvents;
 }
 
 // ===== Experiments =====
@@ -2269,6 +2427,12 @@ async function selectExperiment(id) {
   }
   activeTasks = {};
   persistedProcessHistory = [];
+  persistedActivityEvents = [];
+  liveActivityEvents = [];
+  const activityTaskFilter = document.getElementById('activityLogTaskFilter');
+  if (activityTaskFilter) activityTaskFilter.value = 'all';
+  const activitySearch = document.getElementById('activityLogSearch');
+  if (activitySearch) activitySearch.value = '';
 
   currentExpId = id;
 
@@ -2867,7 +3031,7 @@ function showStatusPanel(taskId) {
   el.id = elId;
   el.className = 'message assistant streaming';
   el.innerHTML =
-    '<div class="msg-role">CoreClaw <button class="streaming-history-btn" onclick="showProcessHistoryModal()">🕘 History</button><button class="streaming-stop-btn" onclick="stopTask(\'' + (taskId || '') + '\')">⏹ Stop</button></div>' +
+    '<div class="msg-role">CoreClaw <button class="streaming-history-btn" onclick="showProcessHistoryModal()">🕘 History</button><button class="streaming-activity-btn" onclick="showActivityLogModal()">📋 Activity</button><button class="streaming-stop-btn" onclick="stopTask(\'' + (taskId || '') + '\')">⏹ Stop</button></div>' +
     '<div class="agent-status-panel" id="asp-' + sid + '">' +
       '<div class="asp-progress"><div class="asp-progress-fill indeterminate" id="asp-fill-' + sid + '"></div></div>' +
       '<div class="asp-body">' +
@@ -2990,6 +3154,106 @@ async function showProcessHistoryModal() {
   document.getElementById('processHistoryModal').classList.add('visible');
 }
 
+function getActivityLogItems() {
+  const filter = document.getElementById('activityLogFilter')?.value || 'all';
+  const taskFilter = document.getElementById('activityLogTaskFilter')?.value || 'all';
+  const searchText = (document.getElementById('activityLogSearch')?.value || '').trim().toLowerCase();
+  const items = mergeActivityEvents(persistedActivityEvents, liveActivityEvents)
+    .filter(item => !currentExpId || item.experimentId === currentExpId)
+    .filter(item => filter === 'all' ? true : item.category === filter)
+    .filter(item => taskFilter === 'all' ? true : item.taskId === taskFilter)
+    .filter(item => {
+      if (!searchText) return true;
+      const haystack = [
+        item.message,
+        item.raw,
+        item.taskId,
+        item.toolName,
+        item.filePath,
+        item.command,
+        item.status,
+        item.category,
+        item.action,
+      ].filter(Boolean).join('\n').toLowerCase();
+      return haystack.includes(searchText);
+    });
+  return items;
+}
+
+function syncActivityTaskFilterOptions(items) {
+  const select = document.getElementById('activityLogTaskFilter');
+  if (!select) return;
+  const previousValue = select.value || 'all';
+  const taskIds = [...new Set((Array.isArray(items) ? items : [])
+    .map(item => item?.taskId)
+    .filter(Boolean))]
+    .sort((left, right) => String(right).localeCompare(String(left)));
+
+  select.innerHTML = '<option value="all">All tasks</option>'
+    + taskIds.map(taskId => `<option value="${esc(taskId)}">${esc(taskId)}</option>`).join('');
+
+  select.value = taskIds.includes(previousValue) ? previousValue : 'all';
+}
+
+function formatActivityBadge(category) {
+  const map = {
+    task: 'Task',
+    tool: 'Tool',
+    command: 'Command',
+    file: 'File',
+    model: 'Model',
+    system: 'System',
+  };
+  return map[category] || (category || 'Activity');
+}
+
+function renderActivityLogModal() {
+  const list = document.getElementById('activityLogList');
+  const summary = document.getElementById('activityLogSummary');
+  if (!list || !summary) return;
+
+  const allItems = mergeActivityEvents(persistedActivityEvents, liveActivityEvents)
+    .filter(item => !currentExpId || item.experimentId === currentExpId);
+  syncActivityTaskFilterOptions(allItems);
+  const items = getActivityLogItems();
+  const totalTasks = new Set(allItems.map(item => item.taskId).filter(Boolean)).size;
+  summary.textContent = allItems.length
+    ? `${items.length}/${allItems.length} activities shown${totalTasks ? ` • ${totalTasks} tasks` : ''}`
+    : 'No activities recorded yet.';
+
+  if (!items.length) {
+    list.innerHTML = '<div class="activity-log-empty">No activity events match the current filters.</div>';
+    return;
+  }
+
+  list.innerHTML = items.map(item => {
+    const time = item.timestamp ? new Date(item.timestamp).toLocaleString('ja-JP') : '—';
+    const message = formatFriendlyStatus(item.message) || item.message;
+    const meta = [
+      item.taskId ? `Task: ${item.taskId}` : '',
+      item.toolName ? `Tool: ${item.toolName}` : '',
+      item.filePath ? `Path: ${item.filePath}` : '',
+      item.command ? `Command: ${item.command}` : '',
+      item.status ? `Status: ${item.status}` : '',
+    ].filter(Boolean);
+    return `<div class="activity-log-item">
+      <div class="activity-log-head">
+        <span class="activity-log-badge ${esc(item.category || 'system')}">${esc(formatActivityBadge(item.category))}</span>
+        <span class="activity-log-time">${esc(time)}</span>
+      </div>
+      <div class="activity-log-message">${esc(message)}</div>
+      ${meta.length ? `<div class="activity-log-meta">${meta.map(part => `<span>${esc(part)}</span>`).join('')}</div>` : ''}
+      ${item.raw && item.raw !== item.message ? `<div class="activity-log-raw">${esc(item.raw)}</div>` : ''}
+    </div>`;
+  }).join('');
+}
+
+async function showActivityLogModal() {
+  await loadActivityLog();
+  renderActivityLogModal();
+  document.getElementById('activityLogModal').classList.add('visible');
+}
+
 function humanizeToolName(toolName) {
   if (!toolName) return 'ツール';
   const normalized = String(toolName).replace(/^ToolUniverse-/, '');
@@ -3038,7 +3302,67 @@ function formatFriendlyStatus(line) {
     return '🐳 コンテナを起動中...';
   }
 
-  let match = line.match(/^MCP\s+(.+?):\s+connected$/i);
+  let match = line.match(/^Executing command:\s+(.+)$/i);
+  if (match) {
+    return '⌨️ コマンドを実行: ' + match[1];
+  }
+
+  match = line.match(/^Command detail:\s+(.+)$/i);
+  if (match) {
+    return '⌨️ コマンド詳細: ' + match[1];
+  }
+
+  match = line.match(/^Command finished$/i);
+  if (match) {
+    return '✅ コマンド実行が完了しました';
+  }
+
+  match = line.match(/^Reading file:\s+(.+)$/i);
+  if (match) {
+    return '📄 ファイルを読込: ' + match[1];
+  }
+
+  match = line.match(/^Creating file:\s+(.+)$/i);
+  if (match) {
+    return '🆕 ファイルを作成: ' + match[1];
+  }
+
+  match = line.match(/^Creating directory:\s+(.+)$/i);
+  if (match) {
+    return '📁 ディレクトリを作成: ' + match[1];
+  }
+
+  match = line.match(/^Updating file:\s+(.+)$/i);
+  if (match) {
+    return '🛠 ファイルを更新: ' + match[1];
+  }
+
+  match = line.match(/^Created file:\s+(.+)$/i);
+  if (match) {
+    return '🆕 作成されたファイル: ' + match[1];
+  }
+
+  match = line.match(/^Modified file:\s+(.+)$/i);
+  if (match) {
+    return '✏️ 更新されたファイル: ' + match[1];
+  }
+
+  match = line.match(/^Deleted file:\s+(.+)$/i);
+  if (match) {
+    return '🗑 削除されたファイル: ' + match[1];
+  }
+
+  match = line.match(/^Listing directory:\s+(.+)$/i);
+  if (match) {
+    return '📂 ディレクトリ一覧を取得: ' + match[1];
+  }
+
+  match = line.match(/^Checking errors:\s+(.+)$/i);
+  if (match) {
+    return '🩺 エラー確認: ' + match[1];
+  }
+
+  match = line.match(/^MCP\s+(.+?):\s+connected$/i);
   if (match) {
     return '🧩 ' + humanizeToolName(match[1]) + ' に接続しました';
   }

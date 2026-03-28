@@ -38,11 +38,26 @@ export interface ExperimentProcessHistory {
   id: string;
   experimentId: string;
   prompt: string;
-  status: 'running' | 'error' | 'cancelled';
+  status: 'running' | 'done' | 'error' | 'cancelled';
   startedAt: string;
   finishedAt?: string;
   _lastStatus?: string;
   _statusHistory?: { message: string; timestamp: string }[];
+}
+
+export interface ExperimentActivityEvent {
+  id: string;
+  experimentId: string;
+  taskId: string;
+  timestamp: string;
+  category: 'task' | 'tool' | 'command' | 'file' | 'model' | 'system';
+  action: string;
+  message: string;
+  raw?: string;
+  toolName?: string;
+  filePath?: string;
+  command?: string;
+  status?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -483,6 +498,59 @@ export function appendTerminalProcessLog(
     );
   } catch (err) {
     logger.warn({ experimentId, err }, 'Failed to write process history log');
+  }
+}
+
+export function appendActivityEvent(event: ExperimentActivityEvent): void {
+  try {
+    const logDir = path.join(experimentDir(event.experimentId), 'logs');
+    fs.mkdirSync(logDir, { recursive: true });
+    const jsonlPath = path.join(logDir, 'activity-events.jsonl');
+    fs.appendFileSync(jsonlPath, JSON.stringify(event) + '\n');
+  } catch (err) {
+    logger.warn({ experimentId: event.experimentId, err }, 'Failed to write activity event');
+  }
+}
+
+export function listActivityEvents(
+  experimentId: string,
+  limit = 500,
+): ExperimentActivityEvent[] {
+  try {
+    const jsonlPath = path.join(experimentDir(experimentId), 'logs', 'activity-events.jsonl');
+    if (!fs.existsSync(jsonlPath)) return [];
+
+    const lines = fs.readFileSync(jsonlPath, 'utf-8')
+      .split('\n')
+      .map(line => line.trim())
+      .filter(Boolean);
+
+    const events: ExperimentActivityEvent[] = [];
+    for (const line of lines) {
+      try {
+        const parsed = JSON.parse(line) as Partial<ExperimentActivityEvent>;
+        if (
+          typeof parsed.id === 'string'
+          && typeof parsed.experimentId === 'string'
+          && typeof parsed.taskId === 'string'
+          && typeof parsed.timestamp === 'string'
+          && typeof parsed.category === 'string'
+          && typeof parsed.action === 'string'
+          && typeof parsed.message === 'string'
+        ) {
+          events.push(parsed as ExperimentActivityEvent);
+        }
+      } catch {
+        // Ignore malformed lines so one bad entry does not break the view.
+      }
+    }
+
+    return events
+      .sort((left, right) => new Date(right.timestamp).getTime() - new Date(left.timestamp).getTime())
+      .slice(0, limit);
+  } catch (err) {
+    logger.warn({ experimentId, err }, 'Failed to read activity events');
+    return [];
   }
 }
 

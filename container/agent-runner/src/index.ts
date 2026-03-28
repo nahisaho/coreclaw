@@ -32,6 +32,11 @@ interface ContainerOutput {
   error?: string;
 }
 
+interface WorkspaceSnapshotEntry {
+  size: number;
+  mtimeMs: number;
+}
+
 const IPC_INPUT_DIR = '/workspace/ipc/input';
 const IPC_INPUT_CLOSE_SENTINEL = path.join(IPC_INPUT_DIR, '_close');
 const IPC_POLL_MS = 500;
@@ -47,6 +52,181 @@ function writeOutput(output: ContainerOutput): void {
 
 function log(message: string): void {
   console.error(`[agent-runner] ${message}`);
+}
+
+function truncateForLog(text: string, limit = 180): string {
+  return text.length > limit ? `${text.slice(0, limit - 3)}...` : text;
+}
+
+function shouldIgnoreWorkspacePath(relativePath: string): boolean {
+  const topLevel = relativePath.split('/').filter(Boolean)[0] || '';
+  return ['.copilot', '.github', 'logs', 'node_modules'].includes(topLevel);
+}
+
+function snapshotWorkspace(rootDir: string): Map<string, WorkspaceSnapshotEntry> {
+  const snapshot = new Map<string, WorkspaceSnapshotEntry>();
+
+  const visit = (dir: string, prefix: string): void => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      const relativePath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (shouldIgnoreWorkspacePath(relativePath)) continue;
+      const fullPath = path.join(dir, entry.name);
+      if (entry.isDirectory()) {
+        visit(fullPath, relativePath);
+        continue;
+      }
+      if (!entry.isFile()) continue;
+      const stat = fs.statSync(fullPath);
+      snapshot.set(relativePath, {
+        size: stat.size,
+        mtimeMs: Math.floor(stat.mtimeMs),
+      });
+    }
+  };
+
+  if (fs.existsSync(rootDir)) {
+    visit(rootDir, '');
+  }
+
+  return snapshot;
+}
+
+function diffWorkspaceSnapshots(
+  before: Map<string, WorkspaceSnapshotEntry>,
+  after: Map<string, WorkspaceSnapshotEntry>,
+): string[] {
+  const created: string[] = [];
+  const modified: string[] = [];
+  const deleted: string[] = [];
+
+  for (const [relativePath, nextMeta] of after.entries()) {
+    const prevMeta = before.get(relativePath);
+    if (!prevMeta) {
+      created.push(relativePath);
+      continue;
+    }
+    if (prevMeta.size !== nextMeta.size || prevMeta.mtimeMs !== nextMeta.mtimeMs) {
+      modified.push(relativePath);
+    }
+  }
+
+  for (const relativePath of before.keys()) {
+    if (!after.has(relativePath)) {
+      deleted.push(relativePath);
+    }
+  }
+
+  const messages: string[] = [];
+  const pushChanges = (label: string, files: string[]) => {
+    const limit = 12;
+    for (const file of files.slice(0, limit)) {
+      messages.push(`${label}: ${file}`);
+    }
+    if (files.length > limit) {
+      messages.push(`${label}: ${files.length - limit} more files`);
+    }
+  };
+
+  pushChanges('Created file', created.sort());
+  pushChanges('Modified file', modified.sort());
+  pushChanges('Deleted file', deleted.sort());
+
+  return messages;
+}
+
+function extractPatchTargets(input: string): string[] {
+  const targets = input
+    .split('\n')
+    .map((line) => line.trim())
+    .filter((line) => line.startsWith('*** Add File:') || line.startsWith('*** Update File:') || line.startsWith('*** Delete File:'))
+    .map((line) => line.replace(/^\*\*\*\s+(?:Add|Update|Delete) File:\s+/, '').trim());
+  return [...new Set(targets)].slice(0, 8);
+}
+
+function summarizeToolStart(toolName: string, args: Record<string, unknown>): string[] {
+  const details: string[] = [];
+  const command = typeof args.command === 'string' ? args.command.trim() : '';
+  const filePath = typeof args.filePath === 'string' ? args.filePath.trim() : '';
+  const dirPath = typeof args.dirPath === 'string' ? args.dirPath.trim() : '';
+  const query = typeof args.query === 'string' ? args.query.trim() : '';
+  const includePattern = typeof args.includePattern === 'string' ? args.includePattern.trim() : '';
+  const input = typeof args.input === 'string' ? args.input : '';
+
+  switch (toolName) {
+    case 'run_in_terminal':
+      if (command) details.push(`Executing command: ${truncateForLog(command, 220)}`);
+      break;
+    case 'read_file':
+      if (filePath) {
+        const start = typeof args.startLine === 'number' ? args.startLine : null;
+        const end = typeof args.endLine === 'number' ? args.endLine : null;
+        details.push(`Reading file: ${filePath}${start && end ? ` (${start}-${end})` : ''}`);
+      }
+      break;
+    case 'create_file':
+      if (filePath) details.push(`Creating file: ${filePath}`);
+      break;
+    case 'create_directory':
+      if (dirPath) details.push(`Creating directory: ${dirPath}`);
+      break;
+    case 'apply_patch':
+      for (const target of extractPatchTargets(input)) {
+        details.push(`Updating file: ${target}`);
+      }
+      break;
+    case 'grep_search':
+      if (query) details.push(`Searching code: ${truncateForLog(query)}`);
+      if (includePattern) details.push(`Search scope: ${includePattern}`);
+      break;
+    case 'file_search':
+      if (query) details.push(`Searching files: ${truncateForLog(query)}`);
+      break;
+    case 'list_dir':
+      if (typeof args.path === 'string' && args.path.trim()) {
+        details.push(`Listing directory: ${args.path.trim()}`);
+      }
+      break;
+    case 'get_errors': {
+      const paths = Array.isArray(args.filePaths)
+        ? args.filePaths.filter((item): item is string => typeof item === 'string').slice(0, 5)
+        : [];
+      if (paths.length) {
+        for (const p of paths) details.push(`Checking errors: ${p}`);
+      }
+      break;
+    }
+    default:
+      if (filePath) details.push(`Target file: ${filePath}`);
+      if (dirPath) details.push(`Target directory: ${dirPath}`);
+      if (command) details.push(`Command detail: ${truncateForLog(command, 220)}`);
+      if (query) details.push(`Query detail: ${truncateForLog(query)}`);
+      break;
+  }
+
+  return details.slice(0, 12);
+}
+
+function summarizeToolComplete(toolName: string, data: Record<string, unknown>): string[] {
+  const success = data.success !== false;
+  const details: string[] = [];
+
+  if (!success) {
+    details.push(`Failed ${toolName}`);
+    return details;
+  }
+
+  if (toolName === 'run_in_terminal') {
+    details.push('Command finished');
+    return details;
+  }
+
+  if (toolName === 'apply_patch') {
+    details.push('File update finished');
+    return details;
+  }
+
+  details.push(`Completed ${toolName}`);
+  return details;
 }
 
 async function readStdin(): Promise<string> {
@@ -133,7 +313,7 @@ function waitForIpcMessage(): Promise<string | null> {
 async function runCopilotQuery(
   prompt: string,
   containerInput: ContainerInput,
-): Promise<{ output: string; exitCode: number }> {
+): Promise<{ output: string; exitCode: number; workspaceChanges: string[] }> {
   return new Promise((resolve, reject) => {
     const args: string[] = [
       '-p', prompt,
@@ -173,6 +353,7 @@ async function runCopilotQuery(
     }
 
     const cwd = '/workspace/group';
+    const beforeSnapshot = snapshotWorkspace(cwd);
 
     log(`Running copilot with prompt (${prompt.length} chars)`);
 
@@ -248,13 +429,21 @@ async function runCopilotQuery(
         case 'tool.execution_start': {
           const toolName = data.toolName || 'tool';
           const argsSummary = data.arguments?.description || data.arguments?.intent || data.arguments?.command || data.arguments?.query;
-          emitStatus(argsSummary ? `Calling ${toolName}: ${argsSummary}` : `Calling ${toolName}`);
+          const detailMessages = data.arguments && typeof data.arguments === 'object'
+            ? summarizeToolStart(toolName, data.arguments as Record<string, unknown>)
+            : [];
+          if (detailMessages.length > 0) {
+            for (const message of detailMessages) emitStatus(message);
+          } else {
+            emitStatus(argsSummary ? `Calling ${toolName}: ${argsSummary}` : `Calling ${toolName}`);
+          }
           return true;
         }
         case 'tool.execution_complete': {
           const toolName = data.toolName || data.result?.toolName || 'tool';
-          const success = data.success !== false;
-          emitStatus(success ? `Completed ${toolName}` : `Failed ${toolName}`);
+          for (const message of summarizeToolComplete(toolName, data as Record<string, unknown>)) {
+            emitStatus(message);
+          }
           return true;
         }
         case 'result': {
@@ -322,9 +511,11 @@ async function runCopilotQuery(
       if (trailing) {
         parseJsonEvent(trailing);
       }
+      const afterSnapshot = snapshotWorkspace(cwd);
       resolve({
         output: finalAssistantMessage || accumulatedAssistantText.trim() || stdout.trim(),
         exitCode: code ?? 1,
+        workspaceChanges: diffWorkspaceSnapshots(beforeSnapshot, afterSnapshot),
       });
     });
 
@@ -391,10 +582,14 @@ async function main(): Promise<void> {
     while (true) {
       log(`Starting query (session: ${sessionId})...`);
 
-      const { output, exitCode } = await runCopilotQuery(
+      const { output, exitCode, workspaceChanges } = await runCopilotQuery(
         prompt,
         containerInput,
       );
+
+      for (const message of workspaceChanges) {
+        log(message);
+      }
 
       if (exitCode !== 0) {
         log(`Copilot exited with code ${exitCode}`);

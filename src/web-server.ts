@@ -13,6 +13,7 @@ import { logger } from './logger.js';
 import {
   initExperimentsDb,
   createExperiment,
+  type ExperimentActivityEvent,
   getExperiment,
   listExperiments,
   updateExperiment,
@@ -27,8 +28,10 @@ import {
   searchMessages,
   listArtifacts,
   appendCompletedProcessHistory,
+  appendActivityEvent,
   appendTerminalProcessLog,
   drainStaleRunningProcessHistory,
+  listActivityEvents,
   listProcessHistory,
   upsertProcessHistory,
   deleteProcessHistory,
@@ -466,6 +469,164 @@ let appShutdown: AppShutdown | null = null;
 let appRestart: AppRestart | null = null;
 let memorySummarizer: MemorySummarizer | null = null;
 
+function buildActivityId(taskId: string): string {
+  return `activity-${taskId}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+}
+
+function buildTaskActivityEvent(
+  task: ActiveTask,
+  category: ExperimentActivityEvent['category'],
+  action: string,
+  message: string,
+  extras: Partial<Omit<ExperimentActivityEvent, 'id' | 'experimentId' | 'taskId' | 'timestamp' | 'category' | 'action' | 'message'>> = {},
+): ExperimentActivityEvent {
+  return {
+    id: buildActivityId(task.id),
+    experimentId: task.experimentId,
+    taskId: task.id,
+    timestamp: new Date().toISOString(),
+    category,
+    action,
+    message,
+    ...extras,
+  };
+}
+
+function persistAndBroadcastActivity(task: ActiveTask, event: ExperimentActivityEvent): void {
+  appendActivityEvent(event);
+  broadcastToExperiment(task.experimentId, {
+    type: 'activity_event',
+    event,
+  });
+}
+
+function parseStatusLineActivity(task: ActiveTask, statusLine: string): ExperimentActivityEvent | null {
+  if (!statusLine || statusLine === '__heartbeat__') return null;
+
+  let match = statusLine.match(/^Model selected:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'model', 'selected', `Model selected: ${match[1]}`, {
+      raw: statusLine,
+    });
+  }
+
+  match = statusLine.match(/^Executing command:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'command', 'execute', `Executing command: ${match[1]}`, {
+      raw: statusLine,
+      command: match[1],
+    });
+  }
+
+  match = statusLine.match(/^Command detail:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'command', 'detail', `Command detail: ${match[1]}`, {
+      raw: statusLine,
+      command: match[1],
+    });
+  }
+
+  match = statusLine.match(/^Reading file:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'file', 'read', `Reading file: ${match[1]}`, {
+      raw: statusLine,
+      filePath: match[1],
+    });
+  }
+
+  match = statusLine.match(/^Creating file:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'file', 'create', `Creating file: ${match[1]}`, {
+      raw: statusLine,
+      filePath: match[1],
+    });
+  }
+
+  match = statusLine.match(/^Creating directory:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'file', 'mkdir', `Creating directory: ${match[1]}`, {
+      raw: statusLine,
+      filePath: match[1],
+    });
+  }
+
+  match = statusLine.match(/^Updating file:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'file', 'update', `Updating file: ${match[1]}`, {
+      raw: statusLine,
+      filePath: match[1],
+    });
+  }
+
+  match = statusLine.match(/^Created file:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'file', 'created', `Created file: ${match[1]}`, {
+      raw: statusLine,
+      filePath: match[1],
+    });
+  }
+
+  match = statusLine.match(/^Modified file:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'file', 'modified', `Modified file: ${match[1]}`, {
+      raw: statusLine,
+      filePath: match[1],
+    });
+  }
+
+  match = statusLine.match(/^Deleted file:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'file', 'deleted', `Deleted file: ${match[1]}`, {
+      raw: statusLine,
+      filePath: match[1],
+    });
+  }
+
+  match = statusLine.match(/^Listing directory:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'file', 'list', `Listing directory: ${match[1]}`, {
+      raw: statusLine,
+      filePath: match[1],
+    });
+  }
+
+  match = statusLine.match(/^Checking errors:\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'tool', 'check_errors', `Checking errors: ${match[1]}`, {
+      raw: statusLine,
+      filePath: match[1],
+      toolName: 'get_errors',
+    });
+  }
+
+  match = statusLine.match(/^Calling\s+(.+?)(?::\s*(.+))?$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'tool', 'start', statusLine, {
+      raw: statusLine,
+      toolName: match[1],
+    });
+  }
+
+  match = statusLine.match(/^(Completed|Failed)\s+(.+)$/i);
+  if (match) {
+    return buildTaskActivityEvent(task, 'tool', match[1].toLowerCase() === 'completed' ? 'complete' : 'fail', statusLine, {
+      raw: statusLine,
+      toolName: match[2],
+      status: match[1].toLowerCase() === 'completed' ? 'success' : 'error',
+    });
+  }
+
+  if (statusLine === '__container_spawned__' || statusLine === 'Container starting') {
+    return buildTaskActivityEvent(task, 'system', 'container_spawn', 'Container starting', {
+      raw: statusLine,
+    });
+  }
+
+  return buildTaskActivityEvent(task, 'system', 'status', statusLine, {
+    raw: statusLine,
+  });
+}
+
 export function setAgentRunner(runner: AgentRunner): void {
   agentRunner = runner;
 }
@@ -750,6 +911,17 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     if (!getExperiment(expId)) { sendJson(res, 404, { error: 'Not found' }); return; }
     const tasks = listProcessHistory(expId);
     sendJson(res, 200, { tasks });
+    return;
+  }
+
+  // GET /api/experiments/:id/activity
+  const activityMatch = pathname.match(/^\/api\/experiments\/([^/]+)\/activity$/);
+  if (method === 'GET' && activityMatch) {
+    const expId = activityMatch[1];
+    if (!getExperiment(expId)) { sendJson(res, 404, { error: 'Not found' }); return; }
+    const limit = parseInt(url.searchParams.get('limit') || '500', 10);
+    const events = listActivityEvents(expId, limit);
+    sendJson(res, 200, { events });
     return;
   }
 
@@ -1559,6 +1731,9 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
       };
       activeTasks.set(taskId, task);
       syncProcessHistory(task);
+      persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'start', 'Task started', {
+        status: 'running',
+      }));
 
       broadcastToExperiment(data.experimentId, { type: 'agent_start', taskId });
       broadcastTasks();
@@ -1617,6 +1792,19 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               ? { id: task.streamingMsgId, experiment_id: data.experimentId, role: 'assistant' as const, content: fullResponse, timestamp: new Date().toISOString() }
               : addMessage(data.experimentId, 'assistant', fullResponse);
             task.finalMessage = assistantMsg;
+            appendTerminalProcessLog(task.experimentId, {
+              id: task.id,
+              experimentId: task.experimentId,
+              prompt: task.prompt,
+              status: 'done',
+              startedAt: task.startedAt,
+              finishedAt: task.finishedAt,
+              _lastStatus: task._lastStatus,
+              _statusHistory: task._statusHistory,
+            }, 'completed');
+            persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'complete', 'Task completed', {
+              status: 'done',
+            }));
             appendCompletedProcessHistory(task.experimentId, {
               id: task.id,
               experimentId: task.experimentId,
@@ -1660,6 +1848,9 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               _lastStatus: task._lastStatus,
               _statusHistory: task._statusHistory,
             }, error);
+            persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'error', `Task failed: ${error}`, {
+              status: 'error',
+            }));
             syncProcessHistory(task);
             const errMsg = addMessage(data.experimentId, 'system', `Error: ${error}`);
             broadcastToExperiment(data.experimentId, {
@@ -1690,6 +1881,10 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
                 }];
               }
             }
+            const activityEvent = parseStatusLineActivity(task, statusLine);
+            if (activityEvent) {
+              persistAndBroadcastActivity(task, activityEvent);
+            }
             syncProcessHistory(task);
             broadcastToExperiment(data.experimentId, {
               type: 'agent_status',
@@ -1716,6 +1911,9 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
           _lastStatus: task._lastStatus,
           _statusHistory: task._statusHistory,
         }, reply.content);
+        persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'complete', 'Task completed', {
+          status: 'done',
+        }));
         syncProcessHistory(task);
         broadcastToExperiment(data.experimentId, {
           type: 'agent_done',
@@ -1742,7 +1940,11 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
           startedAt: task.startedAt,
           finishedAt: task.finishedAt,
           _lastStatus: task._lastStatus,
+          _statusHistory: task._statusHistory,
         }, 'Task cancelled by user.');
+        persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'cancel', 'Task cancelled by user.', {
+          status: 'cancelled',
+        }));
         syncProcessHistory(task);
         if (agentStopper) {
           agentStopper(task.experimentId, data.taskId);
