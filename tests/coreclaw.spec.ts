@@ -1039,6 +1039,55 @@ test.describe('Chat Flow', () => {
       await expect(page.locator('#processHistoryList')).not.toContainText('Cancelled');
     });
 
+    test('activity log shows literature search entries from process history fallback', async ({ page }) => {
+      await page.goto('/');
+
+      await createExperiment(page, 'Activity Fallback Test');
+
+      await page.route('**/api/experiments/*/process-history', async (route) => {
+        const expId = route.request().url().match(/\/api\/experiments\/([^/]+)\/process-history/)?.[1] || '';
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            tasks: [
+              {
+                id: 'task-running',
+                experimentId: expId,
+                prompt: 'Find recent papers',
+                status: 'running',
+                startedAt: new Date('2026-03-28T12:00:00.000Z').toISOString(),
+                finishedAt: null,
+                _lastStatus: 'Calling ToolUniverse-execute_tool',
+                _statusHistory: [
+                  {
+                    message: 'Calling ToolUniverse-execute_tool',
+                    timestamp: new Date('2026-03-28T12:00:05.000Z').toISOString(),
+                  },
+                ],
+              },
+            ],
+          }),
+        });
+      });
+      await page.route('**/api/experiments/*/activity', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({ events: [] }),
+        });
+      });
+
+      await page.evaluate(() => {
+        window.showStatusPanel('task-running');
+      });
+
+      await page.locator('#streaming-msg-task-running .streaming-activity-btn').click();
+
+      await expect(page.locator('#activityLogModal')).toHaveClass(/visible/);
+      await expect(page.locator('#activityLogList')).toContainText('文献データベースを検索中');
+    });
+
     test('websocket event sequence updates progress panel and final message', async ({ page }) => {
       await page.goto('/');
 

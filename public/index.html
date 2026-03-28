@@ -3169,7 +3169,7 @@ function getActivityLogItems() {
   const filter = document.getElementById('activityLogFilter')?.value || 'all';
   const taskFilter = document.getElementById('activityLogTaskFilter')?.value || 'all';
   const searchText = (document.getElementById('activityLogSearch')?.value || '').trim().toLowerCase();
-  const items = mergeActivityEvents(persistedActivityEvents, liveActivityEvents)
+  const items = getMergedActivityLogItems()
     .filter(item => !currentExpId || item.experimentId === currentExpId)
     .filter(item => filter === 'all' ? true : item.category === filter)
     .filter(item => taskFilter === 'all' ? true : item.taskId === taskFilter)
@@ -3189,6 +3189,60 @@ function getActivityLogItems() {
       return haystack.includes(searchText);
     });
   return items;
+}
+
+function inferActivityCategoryFromStatus(message) {
+  const text = String(message || '');
+  if (/^Model selected:/i.test(text)) return 'model';
+  if (/^(Executing command:|Command detail:|Command finished$)/i.test(text)) return 'command';
+  if (/^(Reading file:|Creating file:|Creating directory:|Updating file:|Created file:|Modified file:|Deleted file:|Listing directory:)/i.test(text)) return 'file';
+  if (/^(Checking errors:|Calling\s+|Completed\s+|Failed\s+)/i.test(text)) return 'tool';
+  return 'system';
+}
+
+function getProcessHistoryActivityFallbackItems() {
+  const mergedEvents = mergeActivityEvents(persistedActivityEvents, liveActivityEvents);
+  const existingMessagesByTask = new Map();
+
+  for (const item of mergedEvents) {
+    if (!item || !item.taskId) continue;
+    const key = item.taskId;
+    const messages = existingMessagesByTask.get(key) || new Set();
+    if (item.message) messages.add(String(item.message));
+    if (item.raw) messages.add(String(item.raw));
+    existingMessagesByTask.set(key, messages);
+  }
+
+  const fallbackItems = [];
+  for (const task of getProcessHistoryItems()) {
+    const taskMessages = existingMessagesByTask.get(task.id) || new Set();
+    const statusHistory = Array.isArray(task._statusHistory) ? task._statusHistory : [];
+    for (const item of statusHistory) {
+      if (!item || !item.message || !item.timestamp) continue;
+      const rawMessage = String(item.message);
+      if (taskMessages.has(rawMessage)) continue;
+      fallbackItems.push({
+        id: `activity-fallback-${task.id}-${item.timestamp}-${rawMessage}`,
+        experimentId: task.experimentId || currentExpId,
+        taskId: task.id,
+        timestamp: item.timestamp,
+        category: inferActivityCategoryFromStatus(rawMessage),
+        action: 'status_history',
+        message: rawMessage,
+        raw: rawMessage,
+        status: task.status,
+      });
+    }
+  }
+
+  return fallbackItems;
+}
+
+function getMergedActivityLogItems() {
+  return mergeActivityEvents(
+    mergeActivityEvents(persistedActivityEvents, liveActivityEvents),
+    getProcessHistoryActivityFallbackItems(),
+  );
 }
 
 function syncActivityTaskFilterOptions(items) {
@@ -3223,7 +3277,7 @@ function renderActivityLogModal() {
   const summary = document.getElementById('activityLogSummary');
   if (!list || !summary) return;
 
-  const allItems = mergeActivityEvents(persistedActivityEvents, liveActivityEvents)
+  const allItems = getMergedActivityLogItems()
     .filter(item => !currentExpId || item.experimentId === currentExpId);
   syncActivityTaskFilterOptions(allItems);
   const items = getActivityLogItems();
@@ -3260,7 +3314,7 @@ function renderActivityLogModal() {
 }
 
 async function showActivityLogModal() {
-  await loadActivityLog();
+  await Promise.all([loadActivityLog(), loadProcessHistory()]);
   renderActivityLogModal();
   document.getElementById('activityLogModal').classList.add('visible');
 }

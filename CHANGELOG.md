@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.47] - 2026-03-28
+
+### Changed
+
+- **Activity fallback from History**: Settings and streaming Activity views now backfill missing activity entries from Process History status lines, so literature-search progress such as `Calling ToolUniverse-execute_tool` remains visible in Activity even when only History captured the live status.
+
 ## [0.1.46] - 2026-03-28
 
 ### Changed
