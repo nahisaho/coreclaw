@@ -862,9 +862,20 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 
 /* Streaming message */
 .message.streaming .msg-role { display: flex; align-items: center; gap: 8px; }
+.streaming-history-btn,
 .streaming-stop-btn {
   background: var(--red); color: #fff; border: none; border-radius: 4px;
   padding: 1px 8px; font-size: 11px; cursor: pointer; opacity: 0.85;
+}
+.streaming-history-btn {
+  background: var(--bg-hover);
+  color: var(--text-secondary);
+  border: 1px solid var(--border);
+}
+.streaming-history-btn:hover {
+  opacity: 1;
+  color: var(--text-primary);
+  border-color: var(--text-muted);
 }
 .streaming-stop-btn:hover { opacity: 1; }
 
@@ -978,6 +989,79 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 
 /* Artifacts modal */
 .modal.artifacts-modal { min-width: 500px; max-width: 600px; max-height: 70vh; display: flex; flex-direction: column; }
+.modal.process-history-modal { min-width: 540px; max-width: 720px; max-height: 75vh; display: flex; flex-direction: column; }
+.process-history-summary {
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 12px;
+}
+.process-history-list {
+  flex: 1;
+  overflow-y: auto;
+  max-height: 52vh;
+}
+.process-history-empty {
+  text-align: center;
+  color: var(--text-muted);
+  padding: 28px;
+  font-size: 13px;
+}
+.process-history-item {
+  border: 1px solid var(--border);
+  background: var(--bg-tertiary);
+  border-radius: 8px;
+  padding: 10px 12px;
+  margin-bottom: 8px;
+}
+.process-history-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 6px;
+  flex-wrap: wrap;
+}
+.process-history-status {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 2px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+}
+.process-history-status.running { color: var(--accent); border-color: var(--accent); background: var(--bg-active); }
+.process-history-status.done { color: var(--green); border-color: var(--green); }
+.process-history-status.error { color: var(--red); border-color: var(--red); }
+.process-history-status.cancelled { color: var(--orange); border-color: var(--orange); }
+.process-history-time {
+  font-size: 11px;
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  margin-left: auto;
+}
+.process-history-prompt {
+  font-size: 13px;
+  color: var(--text-primary);
+  line-height: 1.5;
+  margin-bottom: 6px;
+  word-break: break-word;
+}
+.process-history-meta {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+  font-size: 11px;
+  color: var(--text-secondary);
+}
+.process-history-last-status {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
 .artifacts-list {
   flex: 1; overflow-y: auto; max-height: 50vh;
 }
@@ -1691,6 +1775,21 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   </div>
 </div>
 
+<!-- ===== Process History Modal ===== -->
+<div class="modal-overlay" id="processHistoryModal" onclick="if(event.target===this)closeModal('processHistoryModal')">
+  <div class="modal process-history-modal">
+    <div class="modal-header">
+      <h3>🕘 Process History</h3>
+      <button class="modal-close" onclick="closeModal('processHistoryModal')" title="Close">✕</button>
+    </div>
+    <div class="process-history-summary" id="processHistorySummary"></div>
+    <div class="process-history-list" id="processHistoryList"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('processHistoryModal')">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ===== State =====
 let experiments = [];
@@ -1810,6 +1909,9 @@ function connectWs() {
     // Global task list updates
     if (data.type === 'tasks') {
       activeTaskList = data.tasks;
+      if (document.getElementById('processHistoryModal')?.classList.contains('visible')) {
+        renderProcessHistoryModal();
+      }
       // Restore activeTasks entries for running tasks in the current group
       for (const task of data.tasks) {
         if (task.status === 'running' && task.experimentId === currentExpId && !activeTasks[task.id]) {
@@ -1825,6 +1927,9 @@ function connectWs() {
             streamBuffer: task.streamingText || '',
             elapsedTimer,
             startedAt: serverStart,
+            experimentId: task.experimentId,
+            prompt: task.prompt || '',
+            _lastStatus: task._lastStatus || '',
             context: buildTaskContext(task.prompt || ''),
             hasDetailedStatus: false,
             syntheticTimer: null,
@@ -1880,6 +1985,9 @@ function connectWs() {
             streamBuffer: '',
             elapsedTimer,
             startedAt: Date.now(),
+            experimentId: currentExpId,
+            prompt: '',
+            _lastStatus: '',
             context,
             hasDetailedStatus: false,
             syntheticTimer: null,
@@ -1893,11 +2001,15 @@ function connectWs() {
       case 'agent_chunk':
         if (data.taskId && activeTasks[data.taskId]) {
           activeTasks[data.taskId].streamBuffer += data.chunk;
+          if (!activeTasks[data.taskId].prompt && activeTasks[data.taskId].streamBuffer) {
+            activeTasks[data.taskId].prompt = activeTasks[data.taskId].streamBuffer.split('\n').find(Boolean) || 'Running task';
+          }
           updateStreamingMessage(activeTasks[data.taskId].streamBuffer, data.taskId);
         }
         break;
       case 'agent_status':
         if (data.taskId) {
+          if (activeTasks[data.taskId]) activeTasks[data.taskId]._lastStatus = data.status;
           updateStatusPanelLine(data.taskId, data.status);
         }
         break;
@@ -2656,7 +2768,7 @@ function showStatusPanel(taskId) {
   el.id = elId;
   el.className = 'message assistant streaming';
   el.innerHTML =
-    '<div class="msg-role">CoreClaw <button class="streaming-stop-btn" onclick="stopTask(\'' + (taskId || '') + '\')">⏹ Stop</button></div>' +
+    '<div class="msg-role">CoreClaw <button class="streaming-history-btn" onclick="showProcessHistoryModal()">🕘 History</button><button class="streaming-stop-btn" onclick="stopTask(\'' + (taskId || '') + '\')">⏹ Stop</button></div>' +
     '<div class="agent-status-panel" id="asp-' + sid + '">' +
       '<div class="asp-progress"><div class="asp-progress-fill indeterminate" id="asp-fill-' + sid + '"></div></div>' +
       '<div class="asp-body">' +
@@ -2669,6 +2781,99 @@ function showStatusPanel(taskId) {
     '<div class="msg-content"></div>';
   area.appendChild(el);
   scrollToBottom();
+}
+
+function getProcessHistoryItems() {
+  const seen = new Set();
+  const items = [];
+
+  for (const task of activeTaskList) {
+    if (task.experimentId !== currentExpId) continue;
+    seen.add(task.id);
+    items.push(task);
+  }
+
+  for (const [taskId, task] of Object.entries(activeTasks)) {
+    if (seen.has(taskId)) continue;
+    if (task.experimentId && task.experimentId !== currentExpId) continue;
+    items.push({
+      id: taskId,
+      experimentId: task.experimentId || currentExpId,
+      prompt: task.prompt || task.streamBuffer || 'Running task',
+      status: 'running',
+      startedAt: typeof task.startedAt === 'number' ? new Date(task.startedAt).toISOString() : (task.startedAt || new Date().toISOString()),
+      finishedAt: null,
+      _lastStatus: task._lastStatus || '',
+    });
+  }
+
+  return items.sort((left, right) => {
+    const leftTs = new Date(left.startedAt || 0).getTime();
+    const rightTs = new Date(right.startedAt || 0).getTime();
+    return rightTs - leftTs;
+  });
+}
+
+function formatProcessStatus(status) {
+  const map = {
+    running: { label: 'Running', icon: '🔄' },
+    done: { label: 'Done', icon: '✅' },
+    error: { label: 'Error', icon: '❌' },
+    cancelled: { label: 'Cancelled', icon: '🛑' },
+  };
+  return map[status] || { label: status || 'Unknown', icon: '•' };
+}
+
+function formatProcessDuration(startedAt, finishedAt) {
+  const start = startedAt ? new Date(startedAt).getTime() : 0;
+  if (!start) return '—';
+  const end = finishedAt ? new Date(finishedAt).getTime() : Date.now();
+  const seconds = Math.max(0, Math.floor((end - start) / 1000));
+  return seconds < 60 ? seconds + 's' : Math.floor(seconds / 60) + 'm ' + (seconds % 60) + 's';
+}
+
+function renderProcessHistoryModal() {
+  const list = document.getElementById('processHistoryList');
+  const summary = document.getElementById('processHistorySummary');
+  if (!list || !summary) return;
+
+  const tasks = getProcessHistoryItems();
+  const runningCount = tasks.filter(task => task.status === 'running').length;
+  summary.textContent = tasks.length
+    ? `${tasks.length} process${tasks.length === 1 ? '' : 'es'} in this chat${runningCount ? ` • ${runningCount} running` : ''}`
+    : 'No processes yet in this chat.';
+
+  if (!tasks.length) {
+    list.innerHTML = '<div class="process-history-empty">No processes yet.</div>';
+    return;
+  }
+
+  list.innerHTML = tasks.map(task => {
+    const status = formatProcessStatus(task.status);
+    const started = task.startedAt ? new Date(task.startedAt).toLocaleString('ja-JP') : '—';
+    const finished = task.finishedAt ? new Date(task.finishedAt).toLocaleString('ja-JP') : '—';
+    const duration = formatProcessDuration(task.startedAt, task.finishedAt);
+    const prompt = esc(task.prompt || 'Running task');
+    const lastStatus = task._lastStatus ? `<div class="process-history-last-status">${esc(task._lastStatus)}</div>` : '';
+    return `<div class="process-history-item">
+      <div class="process-history-head">
+        <span class="process-history-status ${esc(task.status || 'unknown')}">${status.icon} ${status.label}</span>
+        <span class="process-history-time">${esc(duration)}</span>
+      </div>
+      <div class="process-history-prompt">${prompt}</div>
+      <div class="process-history-meta">
+        <span>Started: ${esc(started)}</span>
+        <span>Finished: ${esc(finished)}</span>
+        <span>ID: ${esc(task.id || '-')}</span>
+      </div>
+      ${lastStatus}
+    </div>`;
+  }).join('');
+}
+
+function showProcessHistoryModal() {
+  renderProcessHistoryModal();
+  document.getElementById('processHistoryModal').classList.add('visible');
 }
 
 function humanizeToolName(toolName) {

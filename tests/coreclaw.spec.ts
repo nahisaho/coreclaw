@@ -950,6 +950,54 @@ test.describe('Chat Flow', () => {
       await expect(chips.nth(3)).toHaveClass(/active/);
     });
 
+    test('streaming status exposes process history modal for current chat', async ({ page }) => {
+      await page.goto('/');
+
+      await createExperiment(page, 'Process History Test');
+
+      const currentExperimentId = await page.evaluate(() => currentExpId);
+
+      await page.evaluate(([expId]) => {
+        activeTaskList = [
+          {
+            id: 'task-running',
+            experimentId: expId,
+            prompt: '現在の実行中プロセス',
+            status: 'running',
+            startedAt: new Date(Date.now() - 15_000).toISOString(),
+            _lastStatus: 'Calling ToolUniverse-find_tools',
+          },
+          {
+            id: 'task-done',
+            experimentId: expId,
+            prompt: '完了したプロセス',
+            status: 'done',
+            startedAt: new Date(Date.now() - 60_000).toISOString(),
+            finishedAt: new Date(Date.now() - 20_000).toISOString(),
+            _lastStatus: 'Completed ToolUniverse-execute_tool',
+          },
+          {
+            id: 'task-other-exp',
+            experimentId: 'other-exp',
+            prompt: '別チャットのプロセス',
+            status: 'running',
+            startedAt: new Date(Date.now() - 5_000).toISOString(),
+            _lastStatus: 'Should stay hidden',
+          },
+        ];
+        window.showStatusPanel('task-running');
+      }, [currentExperimentId]);
+
+      await page.locator('#streaming-msg-task-running .streaming-history-btn').click();
+
+      await expect(page.locator('#processHistoryModal')).toHaveClass(/visible/);
+      await expect(page.locator('#processHistoryList')).toContainText('現在の実行中プロセス');
+      await expect(page.locator('#processHistoryList')).toContainText('完了したプロセス');
+      await expect(page.locator('#processHistoryList')).not.toContainText('別チャットのプロセス');
+      await expect(page.locator('#processHistoryList')).toContainText('Running');
+      await expect(page.locator('#processHistoryList')).toContainText('Done');
+    });
+
     test('websocket event sequence updates progress panel and final message', async ({ page }) => {
       await page.goto('/');
 
