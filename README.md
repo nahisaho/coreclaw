@@ -144,7 +144,7 @@ coreclaw/
 │   ├── consultant-pwc/     # PwC-style consulting
 │   ├── educationalist/     # Teaching assistant (175 education theories)
 │   ├── general-assistant/  # General-purpose assistant
-│   └── scientist/          # Scientific assistant (195 sub-skills)
+│   └── ...
 ├── data/                   # Runtime data (git-ignored)
 └── groups/                 # Group workspaces (git-ignored)
 ```

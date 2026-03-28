@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.37] - 2026-03-28
+
+### Removed
+
+- **Bundled Scientist skill pack**: Removed the local `skills/scientist` bundle from the repository, including its bundled sub-skills and the Playwright coverage that depended on that local package.
+
 ## [0.1.36] - 2026-03-28
 
 ### Added
