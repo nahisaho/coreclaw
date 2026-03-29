@@ -15,9 +15,6 @@ import {
   initExperimentsDb,
   createExperiment,
   type ExperimentActivityEvent,
-  type BenchmarkRunManifest,
-  type BenchmarkRunRecord,
-  type BenchmarkSkillSnapshot,
   getExperiment,
   listExperiments,
   updateExperiment,
@@ -36,19 +33,13 @@ import {
   appendTerminalProcessLog,
   drainStaleRunningProcessHistory,
   listActivityEvents,
-  listBenchmarkRuns,
   listProcessHistory,
   upsertProcessHistory,
   deleteProcessHistory,
   getArtifactsDir,
   saveArtifact,
   resolveArtifactPath,
-  writeBenchmarkRunManifest,
-  writeBenchmarkArtifactCheck,
-  writeBenchmarkEvaluationResult,
-  writeBenchmarkSkillSnapshot,
   getArtifactSizeBytes,
-  updateMessageContentWithMetadata,
 } from './experiments.js';
 import {
   getMemory,
@@ -74,16 +65,6 @@ import { execSync, spawn, spawnSync } from 'child_process';
 import { classifyUpdaterDirtyFiles, parseDirtyTrackedFiles } from './update-utils.js';
 import { createDeflateRaw, inflateRawSync } from 'zlib';
 import { checkCopilotAuthStatus, resolveGitHubToken, type CopilotAuthStatus } from './github-auth.js';
-import {
-  type BenchmarkArtifactCheck,
-  type BenchmarkEvaluationResult,
-  buildBenchmarkArtifactCheck,
-  buildBenchmarkEvaluationResult,
-  getBenchmarkDefinitionById,
-  loadBenchmarkDefinitions,
-  matchBenchmarkDefinition,
-} from './benchmark-runs.js';
-import { CONTAINER_IMAGE } from './config.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const COPILOT_AUTH_STATUS_TTL_MS = 60_000;
@@ -804,36 +785,6 @@ interface ActiveTask {
   _statusHistory?: { message: string; timestamp: string }[];
   _lastStatusAt?: number;  // timestamp of the last non-heartbeat status line
   _heartbeatSent?: boolean;
-  benchmarkRunId?: string;
-  benchmarkMode?: 'canonical' | 'prompt-run' | 'skill-improvement';
-  benchmarkDefinitionId?: string;
-  benchmarkDefinitionTitle?: string;
-  benchmarkLabel?: string;
-  benchmarkPromptSource?: string;
-  benchmarkRequiredArtifacts?: string[];
-  skillImprovementNote?: string;
-  skillSnapshot?: BenchmarkSkillSnapshot | null;
-}
-
-interface BenchmarkSkillDiffSummary {
-  summary: string;
-  files: string[];
-  added: string[];
-  changed: string[];
-  removed: string[];
-  isBaseline: boolean;
-}
-
-interface BenchmarkAssistantInsight {
-  runId: string;
-  manifest: Pick<
-    BenchmarkRunManifest,
-    'mode' | 'benchmarkDefinitionId' | 'benchmarkDefinitionTitle' | 'promptLabel' | 'promptText' | 'skill' | 'skillImprovementNote'
-  >;
-  evaluation: Pick<BenchmarkEvaluationResult, 'result' | 'summary'> | null;
-  artifactCheck: Pick<BenchmarkArtifactCheck, 'checks' | 'artifactCoverage' | 'allRequiredPresent'> | null;
-  skillDiff: BenchmarkSkillDiffSummary | null;
-  previousComparableSnapshotUnchanged: boolean;
 }
 
 const activeTasks = new Map<string, ActiveTask>();
@@ -876,102 +827,6 @@ function generateTaskId(): string {
   return `task-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
 }
 
-function generateBenchmarkRunId(): string {
-  return `bench-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
-}
-
-function buildSkillSnapshot(skillName: string): BenchmarkSkillSnapshot | null {
-  const normalizedName = String(skillName || '').trim();
-  if (!normalizedName) return null;
-
-  const skillDir = path.resolve(process.cwd(), 'skills', normalizedName);
-  if (!fs.existsSync(skillDir) || !fs.statSync(skillDir).isDirectory()) return null;
-
-  const files: BenchmarkSkillSnapshot['files'] = [];
-  const walk = (dir: string, prefix: string) => {
-    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-      if (entry.name === '.coreclaw-marketplace.json') continue;
-      const entryPath = path.join(dir, entry.name);
-      const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
-      if (entry.isDirectory()) {
-        walk(entryPath, relPath);
-        continue;
-      }
-      const content = fs.readFileSync(entryPath, 'utf-8');
-      files.push({
-        path: relPath,
-        sizeBytes: Buffer.byteLength(content, 'utf-8'),
-        sha256: createHash('sha256').update(content).digest('hex'),
-        content,
-      });
-    }
-  };
-  walk(skillDir, '');
-
-  const aggregate = createHash('sha256');
-  for (const file of files.sort((left, right) => left.path.localeCompare(right.path))) {
-    aggregate.update(file.path);
-    aggregate.update('\0');
-    aggregate.update(file.sha256);
-    aggregate.update('\0');
-  }
-
-  return {
-    runId: '',
-    skillName: normalizedName,
-    capturedAt: new Date().toISOString(),
-    sha256: aggregate.digest('hex'),
-    fileCount: files.length,
-    files,
-  };
-}
-
-function createBenchmarkRunContext(
-  experimentId: string,
-  taskId: string,
-  promptText: string,
-  startedAt: string,
-  benchmark: { id: string; title: string; label: string; promptSource: string; requiredArtifacts: string[] },
-  options?: { mode?: 'canonical' | 'prompt-run' | 'skill-improvement'; skillImprovementNote?: string },
-): { manifest: BenchmarkRunManifest; requiredArtifacts: string[]; skillSnapshot: BenchmarkSkillSnapshot | null } {
-  const experiment = getExperiment(experimentId);
-  const settings = loadSettings();
-  const { source } = resolveGitHubToken();
-  const skillSnapshot = buildSkillSnapshot(experiment?.skill || '');
-  const runId = generateBenchmarkRunId();
-  if (skillSnapshot) {
-    skillSnapshot.runId = runId;
-  }
-
-  return {
-    manifest: {
-      runId,
-      experimentId,
-      taskId,
-      mode: options?.mode || 'canonical',
-      benchmarkDefinitionId: benchmark.id,
-      benchmarkDefinitionTitle: benchmark.title,
-      promptSource: benchmark.promptSource,
-      promptLabel: benchmark.label,
-      promptText,
-      startedAt,
-      status: 'running',
-      model: settings.copilot_model || '',
-      skill: experiment?.skill || '',
-      enabledMcpServers: parseEnabledMcpServers(experiment?.mcp_servers || ''),
-      githubMcpTools: settings.github_mcp_tools || '',
-      containerImage: CONTAINER_IMAGE,
-      copilotAuthSource: source,
-      skillImprovementNote: options?.skillImprovementNote || '',
-      skillSnapshotHash: skillSnapshot?.sha256 || '',
-      skillSnapshotFileCount: skillSnapshot?.fileCount || 0,
-      skillSnapshotCapturedAt: skillSnapshot?.capturedAt || '',
-    },
-    requiredArtifacts: benchmark.requiredArtifacts,
-    skillSnapshot,
-  };
-}
-
 function parseEnabledMcpServers(rawValue: string): string[] {
   try {
     if (!rawValue) return [];
@@ -984,208 +839,6 @@ function parseEnabledMcpServers(rawValue: string): string[] {
   }
 }
 
-function createBenchmarkRunManifest(
-  experimentId: string,
-  taskId: string,
-  promptText: string,
-  startedAt: string,
-): BenchmarkRunManifest | null {
-  const benchmark = matchBenchmarkDefinition(promptText);
-  if (!benchmark) return null;
-
-  return createBenchmarkRunContext(experimentId, taskId, promptText, startedAt, benchmark).manifest;
-}
-
-function buildBenchmarkSkillDiff(
-  currentSnapshot: BenchmarkSkillSnapshot | null,
-  previousSnapshot: BenchmarkSkillSnapshot | null,
-): BenchmarkSkillDiffSummary | null {
-  if (!currentSnapshot) return null;
-
-  if (!previousSnapshot) {
-    return {
-      summary: 'First recorded skill snapshot for this benchmark target',
-      files: currentSnapshot.files.map((file) => `+ ${file.path}`).slice(0, 10),
-      added: currentSnapshot.files.map((file) => file.path),
-      changed: [],
-      removed: [],
-      isBaseline: true,
-    };
-  }
-
-  const currentFiles = new Map(currentSnapshot.files.map((file) => [file.path, file]));
-  const previousFiles = new Map(previousSnapshot.files.map((file) => [file.path, file]));
-  const added: string[] = [];
-  const removed: string[] = [];
-  const changed: string[] = [];
-
-  for (const [filePath, file] of currentFiles) {
-    const previousFile = previousFiles.get(filePath);
-    if (!previousFile) {
-      added.push(filePath);
-      continue;
-    }
-    if (previousFile.sha256 !== file.sha256) {
-      changed.push(filePath);
-    }
-  }
-
-  for (const [filePath] of previousFiles) {
-    if (!currentFiles.has(filePath)) {
-      removed.push(filePath);
-    }
-  }
-
-  if (!added.length && !removed.length && !changed.length) {
-    return {
-      summary: 'No skill file changes compared with the previous run',
-      files: [],
-      added,
-      changed,
-      removed,
-      isBaseline: false,
-    };
-  }
-
-  return {
-    summary: `Skill diff vs previous run: +${added.length} / ~${changed.length} / -${removed.length}`,
-    files: [
-      ...added.map((filePath) => `+ ${filePath}`),
-      ...changed.map((filePath) => `~ ${filePath}`),
-      ...removed.map((filePath) => `- ${filePath}`),
-    ].slice(0, 10),
-    added,
-    changed,
-    removed,
-    isBaseline: false,
-  };
-}
-
-function findPreviousComparableBenchmarkRun(runs: BenchmarkRunRecord[], currentRunId: string): BenchmarkRunRecord | null {
-  const currentIndex = runs.findIndex((run) => run.manifest.runId === currentRunId);
-  if (currentIndex === -1) return null;
-
-  const currentRun = runs[currentIndex];
-  const currentManifest = currentRun.manifest || {};
-  if (!currentManifest.skill) return null;
-
-  for (let index = currentIndex + 1; index < runs.length; index += 1) {
-    const candidate = runs[index];
-    const candidateManifest = candidate.manifest || {};
-    if (candidateManifest.skill !== currentManifest.skill) continue;
-    if (
-      currentManifest.benchmarkDefinitionId
-      && candidateManifest.benchmarkDefinitionId
-      && candidateManifest.benchmarkDefinitionId !== currentManifest.benchmarkDefinitionId
-    ) {
-      continue;
-    }
-    return candidate;
-  }
-
-  return null;
-}
-
-function buildBenchmarkAssistantInsight(
-  currentRun: BenchmarkRunRecord,
-  previousComparableRun: BenchmarkRunRecord | null,
-  skillDiff: BenchmarkSkillDiffSummary | null,
-): BenchmarkAssistantInsight | null {
-  const manifest = currentRun.manifest || {};
-  if (!manifest.skill) return null;
-
-  return {
-    runId: manifest.runId,
-    manifest: {
-      mode: manifest.mode,
-      benchmarkDefinitionId: manifest.benchmarkDefinitionId,
-      benchmarkDefinitionTitle: manifest.benchmarkDefinitionTitle,
-      promptLabel: manifest.promptLabel,
-      promptText: manifest.promptText,
-      skill: manifest.skill,
-      skillImprovementNote: manifest.skillImprovementNote,
-    },
-    evaluation: currentRun.evaluation
-      ? {
-          result: currentRun.evaluation.result,
-          summary: currentRun.evaluation.summary,
-        }
-      : null,
-    artifactCheck: currentRun.artifactCheck
-      ? {
-          checks: currentRun.artifactCheck.checks,
-          artifactCoverage: currentRun.artifactCheck.artifactCoverage,
-          allRequiredPresent: currentRun.artifactCheck.allRequiredPresent,
-        }
-      : null,
-    skillDiff,
-    previousComparableSnapshotUnchanged: Boolean(
-      previousComparableRun?.skillSnapshot?.sha256
-      && currentRun.skillSnapshot?.sha256
-      && previousComparableRun.skillSnapshot.sha256 === currentRun.skillSnapshot.sha256,
-    ),
-  };
-}
-
-function finalizeBenchmarkRun(task: ActiveTask, finalResponse: string): BenchmarkAssistantInsight | null {
-  if (!task.benchmarkRunId || !task.benchmarkLabel || !task.benchmarkRequiredArtifacts) return null;
-  const finalStatus = task.status === 'running' ? 'error' : task.status;
-
-  const settings = loadSettings();
-  const experiment = getExperiment(task.experimentId);
-  const { source } = resolveGitHubToken();
-  const manifest: BenchmarkRunManifest = {
-    runId: task.benchmarkRunId,
-    experimentId: task.experimentId,
-    taskId: task.id,
-    mode: task.benchmarkMode || 'canonical',
-    benchmarkDefinitionId: task.benchmarkDefinitionId || '',
-    benchmarkDefinitionTitle: task.benchmarkDefinitionTitle || '',
-    promptSource: task.benchmarkPromptSource || 'tests/benchmark-prompts.json',
-    promptLabel: task.benchmarkLabel,
-    promptText: task.sourcePrompt,
-    startedAt: task.startedAt,
-    finishedAt: task.finishedAt,
-    status: finalStatus,
-    model: settings.copilot_model || '',
-    skill: experiment?.skill || '',
-    enabledMcpServers: parseEnabledMcpServers(experiment?.mcp_servers || ''),
-    githubMcpTools: settings.github_mcp_tools || '',
-    containerImage: CONTAINER_IMAGE,
-    copilotAuthSource: source,
-    skillImprovementNote: task.skillImprovementNote || '',
-    skillSnapshotHash: task.skillSnapshot?.sha256 || '',
-    skillSnapshotFileCount: task.skillSnapshot?.fileCount || 0,
-    skillSnapshotCapturedAt: task.skillSnapshot?.capturedAt || '',
-  };
-  writeBenchmarkRunManifest(task.experimentId, task.benchmarkRunId, manifest);
-  if (task.skillSnapshot) {
-    writeBenchmarkSkillSnapshot(task.experimentId, task.benchmarkRunId, task.skillSnapshot);
-  }
-
-  const artifactCheck = buildBenchmarkArtifactCheck(
-    task.benchmarkRunId,
-    task.benchmarkRequiredArtifacts,
-    listArtifacts(task.experimentId),
-    (relativePath) => getArtifactSizeBytes(task.experimentId, relativePath),
-  );
-  writeBenchmarkArtifactCheck(task.experimentId, task.benchmarkRunId, artifactCheck);
-
-  const evaluation = buildBenchmarkEvaluationResult(
-    task.benchmarkRunId,
-    finalStatus,
-    artifactCheck,
-    finalResponse,
-  );
-  writeBenchmarkEvaluationResult(task.experimentId, task.benchmarkRunId, evaluation);
-
-  const runs = listBenchmarkRuns(task.experimentId);
-  const currentRun = runs.find((run) => run.manifest.runId === task.benchmarkRunId) || null;
-  if (!currentRun) return null;
-  const previousComparableRun = findPreviousComparableBenchmarkRun(runs, task.benchmarkRunId);
-  const skillDiff = buildBenchmarkSkillDiff(currentRun.skillSnapshot, previousComparableRun?.skillSnapshot || null);
-  return buildBenchmarkAssistantInsight(currentRun, previousComparableRun, skillDiff);
-}
 
 // ---------------------------------------------------------------------------
 // HTTP helpers
@@ -1358,30 +1011,6 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     const limit = parseInt(url.searchParams.get('limit') || '500', 10);
     const events = listActivityEvents(expId, limit);
     sendJson(res, 200, { events });
-    return;
-  }
-
-  // GET /api/experiments/:id/benchmark-runs
-  const benchmarkRunsMatch = pathname.match(/^\/api\/experiments\/([^/]+)\/benchmark-runs$/);
-  if (method === 'GET' && benchmarkRunsMatch) {
-    const expId = benchmarkRunsMatch[1];
-    if (!getExperiment(expId)) { sendJson(res, 404, { error: 'Not found' }); return; }
-    const runs = listBenchmarkRuns(expId);
-    sendJson(res, 200, { runs });
-    return;
-  }
-
-  // GET /api/benchmarks
-  if (method === 'GET' && pathname === '/api/benchmarks') {
-    const benchmarks = loadBenchmarkDefinitions().map((definition) => ({
-      id: definition.id,
-      label: definition.label,
-      title: definition.title,
-      promptSource: definition.promptSource,
-      requiredArtifacts: definition.requiredArtifacts,
-      promptText: definition.promptText,
-    }));
-    sendJson(res, 200, { benchmarks });
     return;
   }
 
@@ -2216,65 +1845,6 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
         streamingText: '',
         _statusHistory: [],
       };
-      const benchmark = matchBenchmarkDefinition(data.content);
-      const requestedBenchmarkId = String(data.benchmarkId || '').trim();
-      const requestedSkillImprovement = data.skillImprovement && data.skillImprovement.enabled
-        ? {
-            note: String(data.skillImprovement.note || '').trim(),
-          }
-        : null;
-      let benchmarkContext: ReturnType<typeof createBenchmarkRunContext> | null = null;
-
-      if (requestedSkillImprovement && benchmark) {
-        benchmarkContext = createBenchmarkRunContext(
-          data.experimentId,
-          taskId,
-          data.content,
-          task.startedAt,
-          benchmark,
-          {
-            mode: 'skill-improvement',
-            skillImprovementNote: requestedSkillImprovement.note,
-          },
-        );
-      } else if (benchmark) {
-        benchmarkContext = createBenchmarkRunContext(
-          data.experimentId,
-          taskId,
-          data.content,
-          task.startedAt,
-          benchmark,
-          { mode: 'canonical' },
-        );
-      } else if (requestedBenchmarkId) {
-        const targetBenchmark = getBenchmarkDefinitionById(requestedBenchmarkId);
-        if (targetBenchmark) {
-          benchmarkContext = createBenchmarkRunContext(
-            data.experimentId,
-            taskId,
-            data.content,
-            task.startedAt,
-            targetBenchmark,
-            { mode: 'prompt-run' },
-          );
-        }
-      }
-
-      if (benchmarkContext) {
-        task.benchmarkRunId = benchmarkContext.manifest.runId;
-        task.benchmarkMode = benchmarkContext.manifest.mode;
-        task.benchmarkDefinitionId = benchmarkContext.manifest.benchmarkDefinitionId;
-        task.benchmarkDefinitionTitle = benchmarkContext.manifest.benchmarkDefinitionTitle;
-        task.benchmarkLabel = benchmarkContext.manifest.promptLabel;
-        task.benchmarkPromptSource = benchmarkContext.manifest.promptSource;
-        task.benchmarkRequiredArtifacts = benchmarkContext.requiredArtifacts;
-        task.skillImprovementNote = benchmarkContext.manifest.skillImprovementNote;
-        task.skillSnapshot = benchmarkContext.skillSnapshot;
-        writeBenchmarkRunManifest(data.experimentId, benchmarkContext.manifest.runId, benchmarkContext.manifest);
-        if (benchmarkContext.skillSnapshot) {
-          writeBenchmarkSkillSnapshot(data.experimentId, benchmarkContext.manifest.runId, benchmarkContext.skillSnapshot);
-        }
-      }
       activeTasks.set(taskId, task);
       syncProcessHistory(task);
       persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'start', 'Task started', {
@@ -2332,11 +1902,9 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
             if (task._heartbeat) { clearInterval(task._heartbeat); task._heartbeat = undefined; }
             task.status = 'done';
             task.finishedAt = new Date().toISOString();
-            const benchmarkInsight = finalizeBenchmarkRun(task, fullResponse);
-            const assistantMetadata = benchmarkInsight ? { benchmarkInsight } : undefined;
             // Replace streaming message with final version
             if (task.streamingMsgId) {
-              updateMessageContentWithMetadata(task.streamingMsgId, fullResponse, assistantMetadata);
+              updateMessageContent(task.streamingMsgId, fullResponse);
             }
             const assistantMsg = task.streamingMsgId
               ? {
@@ -2345,9 +1913,8 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
                   role: 'assistant' as const,
                   content: fullResponse,
                   timestamp: new Date().toISOString(),
-                  metadata: assistantMetadata ? JSON.stringify(assistantMetadata) : undefined,
                 }
-              : addMessage(data.experimentId, 'assistant', fullResponse, assistantMetadata);
+              : addMessage(data.experimentId, 'assistant', fullResponse);
             task.finalMessage = assistantMsg;
             appendTerminalProcessLog(task.experimentId, {
               id: task.id,
@@ -2410,7 +1977,6 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               status: 'error',
               taskPrompt: task.prompt,
             }));
-            finalizeBenchmarkRun(task, error);
             syncProcessHistory(task);
             const errMsg = addMessage(data.experimentId, 'system', `Error: ${error}`);
             broadcastToExperiment(data.experimentId, {
@@ -2471,11 +2037,6 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
           _lastStatus: task._lastStatus,
           _statusHistory: task._statusHistory,
         }, reply.content);
-        const benchmarkInsight = finalizeBenchmarkRun(task, reply.content);
-        if (benchmarkInsight) {
-          updateMessageContentWithMetadata(reply.id, reply.content, { benchmarkInsight });
-          reply.metadata = JSON.stringify({ benchmarkInsight });
-        }
         persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'complete', 'Task completed', {
           status: 'done',
           taskPrompt: task.prompt,
@@ -2512,7 +2073,6 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
           status: 'cancelled',
           taskPrompt: task.prompt,
         }));
-        finalizeBenchmarkRun(task, '');
         syncProcessHistory(task);
         if (agentStopper) {
           agentStopper(task.experimentId, data.taskId);

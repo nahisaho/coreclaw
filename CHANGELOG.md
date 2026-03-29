@@ -6,6 +6,16 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.61] - 2026-03-29
+
+### Removed
+
+- **Benchmark feature removal**: Benchmarksボタン、Benchmark Resultsモーダル、benchmark prompt fixtures、benchmark run永続化、関連APIを削除し、benchmark機能をアプリから完全に撤去しました。
+
+### Fixed
+
+- **Deterministic output-language tests**: Progress UIのPlaywrightテストで出力言語を明示的に固定し、ローカルsettings.jsonの既定値に依存せず安定して検証できるようにしました。
+
 ## [0.1.60] - 2026-03-29
 
 ### Changed

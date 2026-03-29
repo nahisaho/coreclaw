@@ -9,7 +9,6 @@ import crypto from 'crypto';
 import { DATA_DIR, GROUPS_DIR } from './config.js';
 import { logger } from './logger.js';
 import { initMemoryDb } from './memory.js';
-import type { BenchmarkArtifactCheck, BenchmarkEvaluationResult } from './benchmark-runs.js';
 
 export interface Experiment {
   id: string;
@@ -60,54 +59,6 @@ export interface ExperimentActivityEvent {
   filePath?: string;
   command?: string;
   status?: string;
-}
-
-export interface BenchmarkRunManifest {
-  runId: string;
-  experimentId: string;
-  taskId: string;
-  mode?: 'canonical' | 'prompt-run' | 'skill-improvement';
-  benchmarkDefinitionId?: string;
-  benchmarkDefinitionTitle?: string;
-  promptSource: string;
-  promptLabel: string;
-  promptText: string;
-  startedAt: string;
-  finishedAt?: string;
-  status: 'running' | 'done' | 'error' | 'cancelled';
-  model?: string;
-  skill?: string;
-  enabledMcpServers?: string[];
-  githubMcpTools?: string;
-  containerImage?: string;
-  copilotAuthSource?: string;
-  skillImprovementNote?: string;
-  skillSnapshotHash?: string;
-  skillSnapshotFileCount?: number;
-  skillSnapshotCapturedAt?: string;
-}
-
-export interface BenchmarkSkillSnapshotFile {
-  path: string;
-  sizeBytes: number;
-  sha256: string;
-  content: string;
-}
-
-export interface BenchmarkSkillSnapshot {
-  runId: string;
-  skillName: string;
-  capturedAt: string;
-  sha256: string;
-  fileCount: number;
-  files: BenchmarkSkillSnapshotFile[];
-}
-
-export interface BenchmarkRunRecord {
-  manifest: BenchmarkRunManifest;
-  artifactCheck: BenchmarkArtifactCheck | null;
-  evaluation: BenchmarkEvaluationResult | null;
-  skillSnapshot: BenchmarkSkillSnapshot | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -209,12 +160,6 @@ function experimentsDir(): string {
 
 function experimentDir(id: string): string {
   return path.join(experimentsDir(), id);
-}
-
-function benchmarkRunsDir(experimentId: string): string {
-  const dir = path.join(experimentDir(experimentId), 'logs', 'benchmark-runs');
-  fs.mkdirSync(dir, { recursive: true });
-  return dir;
 }
 
 function readJsonFile<T>(filePath: string): T | null {
@@ -790,75 +735,6 @@ export function saveArtifact(
   fs.writeFileSync(filePath, content);
   logger.debug({ experimentId, filename }, 'Artifact saved');
   return filePath;
-}
-
-export function writeBenchmarkRunManifest(
-  experimentId: string,
-  runId: string,
-  manifest: BenchmarkRunManifest,
-): void {
-  fs.writeFileSync(
-    path.join(benchmarkRunsDir(experimentId), `${runId}.json`),
-    JSON.stringify(manifest, null, 2) + '\n',
-  );
-}
-
-export function writeBenchmarkArtifactCheck(
-  experimentId: string,
-  runId: string,
-  payload: unknown,
-): void {
-  fs.writeFileSync(
-    path.join(benchmarkRunsDir(experimentId), `${runId}.artifacts.json`),
-    JSON.stringify(payload, null, 2) + '\n',
-  );
-}
-
-export function writeBenchmarkEvaluationResult(
-  experimentId: string,
-  runId: string,
-  payload: unknown,
-): void {
-  fs.writeFileSync(
-    path.join(benchmarkRunsDir(experimentId), `${runId}.evaluation.json`),
-    JSON.stringify(payload, null, 2) + '\n',
-  );
-}
-
-export function writeBenchmarkSkillSnapshot(
-  experimentId: string,
-  runId: string,
-  payload: unknown,
-): void {
-  fs.writeFileSync(
-    path.join(benchmarkRunsDir(experimentId), `${runId}.skill.json`),
-    JSON.stringify(payload, null, 2) + '\n',
-  );
-}
-
-export function listBenchmarkRuns(experimentId: string): BenchmarkRunRecord[] {
-  const dir = benchmarkRunsDir(experimentId);
-  if (!fs.existsSync(dir)) return [];
-
-  return fs.readdirSync(dir)
-    .filter((entry) => entry.endsWith('.json') && !entry.endsWith('.artifacts.json') && !entry.endsWith('.evaluation.json'))
-    .map((entry) => {
-      const manifest = readJsonFile<BenchmarkRunManifest>(path.join(dir, entry));
-      if (!manifest) return null;
-
-      return {
-        manifest,
-        artifactCheck: readJsonFile<BenchmarkArtifactCheck>(path.join(dir, `${manifest.runId}.artifacts.json`)),
-        evaluation: readJsonFile<BenchmarkEvaluationResult>(path.join(dir, `${manifest.runId}.evaluation.json`)),
-        skillSnapshot: readJsonFile<BenchmarkSkillSnapshot>(path.join(dir, `${manifest.runId}.skill.json`)),
-      };
-    })
-    .filter((record): record is BenchmarkRunRecord => record !== null)
-    .sort((left, right) => {
-      const rightTime = Date.parse(right.manifest.startedAt || right.manifest.finishedAt || '') || 0;
-      const leftTime = Date.parse(left.manifest.startedAt || left.manifest.finishedAt || '') || 0;
-      return rightTime - leftTime;
-    });
 }
 
 function walkDir(dirPath: string, prefix: string, results: string[]): void {
