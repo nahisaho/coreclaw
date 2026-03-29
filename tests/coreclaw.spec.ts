@@ -1795,6 +1795,18 @@ test.describe('Chat Flow', () => {
     });
 
     test('benchmark results show skill snapshot diff against previous run', async ({ page }) => {
+      await page.addInitScript(() => {
+        window.__copiedBenchmarkInsight = '';
+        Object.defineProperty(navigator, 'clipboard', {
+          configurable: true,
+          value: {
+            writeText: async (text: string) => {
+              window.__copiedBenchmarkInsight = text;
+            },
+          },
+        });
+      });
+
       await page.goto('/');
 
       await createExperiment(page, 'Benchmark Skill Diff Test');
@@ -1885,6 +1897,20 @@ test.describe('Chat Flow', () => {
       await expect(page.locator('#benchmarkRunsList')).toContainText("Promote the successful procedure into scientist's reusable checklist or examples so the same behavior is repeatable.");
       await expect(page.locator('#benchmarkRunsList')).toContainText('+ notes.md');
       await expect(page.locator('#benchmarkRunsList')).toContainText('~ SKILL.md');
+
+      const firstRunCard = page.locator('#benchmarkRunsList .benchmark-run-card').first();
+      await expect(firstRunCard.getByRole('button', { name: '📋 Copy' })).toBeVisible();
+      await expect(firstRunCard.getByRole('button', { name: '⬇ Download' })).toBeVisible();
+
+      await firstRunCard.getByRole('button', { name: '📋 Copy' }).click();
+      await expect(firstRunCard.getByRole('button', { name: '✅ Copied' })).toBeVisible();
+      await expect.poll(() => page.evaluate(() => window.__copiedBenchmarkInsight)).toContain('# Skill Improvement Brief');
+      await expect.poll(() => page.evaluate(() => window.__copiedBenchmarkInsight)).toContain('## Suggestions');
+
+      const downloadPromise = page.waitForEvent('download');
+      await firstRunCard.getByRole('button', { name: '⬇ Download' }).click();
+      const download = await downloadPromise;
+      expect(download.suggestedFilename()).toBe('benchmark-skill-improvement-prompt-1-test-run-new.md');
     });
 
     test('benchmark results localize skill improvement suggestions in Japanese', async ({ page }) => {

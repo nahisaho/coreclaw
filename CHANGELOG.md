@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.60] - 2026-03-29
+
+### Changed
+
+- **Benchmark insight export actions**: Benchmarks モーダル内の Skill 改善ブリーフに、改善案をそのままコピーできる操作を追加しました。
+- **Benchmark insight markdown download**: Benchmarks モーダル内の Skill 改善ブリーフを、benchmark 名・run ID 付きの Markdown ファイルとしてダウンロードできるようにしました。
+
 ## [0.1.59] - 2026-03-29
 
 ### Changed

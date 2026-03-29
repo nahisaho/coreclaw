@@ -1513,6 +1513,28 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .benchmark-run-insight-suggestion::before {
   content: '→ '; color: var(--accent); font-weight: 600;
 }
+.benchmark-run-insight-actions {
+  margin-top: 10px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+.benchmark-run-insight-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-secondary);
+  color: var(--text-secondary);
+  border-radius: 8px;
+  padding: 6px 10px;
+  font-size: 12px;
+  cursor: pointer;
+}
+.benchmark-run-insight-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+}
 .assistant-benchmark-insight {
   margin-top: 12px;
 }
@@ -4160,12 +4182,114 @@ function buildBenchmarkSkillImprovementInsight(source, previousComparableRun, de
   };
 }
 
-function renderBenchmarkInsightCard(skillInsight, extraClassName = '') {
+function getBenchmarkRunContext(index) {
+  const runs = Array.isArray(cachedBenchmarkRuns) ? cachedBenchmarkRuns : [];
+  const run = runs[index] || null;
+  if (!run) return null;
+  const previousComparableRun = findPreviousComparableBenchmarkRun(runs, index);
+  const skillDiff = buildBenchmarkSkillDiff(run.skillSnapshot || null, previousComparableRun?.skillSnapshot || null);
+  const skillInsight = buildBenchmarkSkillImprovementInsight(run, previousComparableRun, skillDiff);
+  return { run, previousComparableRun, skillDiff, skillInsight };
+}
+
+function sanitizeBenchmarkInsightFilename(value) {
+  return String(value || 'benchmark-skill-improvement')
+    .toLowerCase()
+    .replace(/[^a-z0-9._-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    || 'benchmark-skill-improvement';
+}
+
+function buildBenchmarkInsightExportText(run, skillInsight, skillDiff) {
+  const manifest = run?.manifest || {};
+  const evaluation = run?.evaluation || null;
+  const heading = outputLanguageText('Skill 改善ブリーフ', 'Skill Improvement Brief');
+  const labels = {
+    benchmark: outputLanguageText('対象 benchmark', 'Target benchmark'),
+    skill: outputLanguageText('スキル', 'Skill'),
+    mode: outputLanguageText('モード', 'Mode'),
+    result: outputLanguageText('Benchmark 結果', 'Benchmark result'),
+    runId: outputLanguageText('Run ID', 'Run ID'),
+    facts: outputLanguageText('観測事項', 'Facts'),
+    suggestions: outputLanguageText('改善案', 'Suggestions'),
+    diff: outputLanguageText('Skill 改訂差分', 'Skill Revision Diff'),
+  };
+  const metaLines = [
+    `${labels.benchmark}: ${manifest.benchmarkDefinitionTitle || manifest.promptLabel || manifest.benchmarkDefinitionId || '-'}`,
+    `${labels.skill}: ${manifest.skill || '-'}`,
+    `${labels.mode}: ${manifest.mode || 'canonical'}`,
+    `${labels.result}: ${String(evaluation?.result || manifest.status || 'running').toUpperCase()}`,
+    `${labels.runId}: ${manifest.runId || '-'}`,
+  ];
+  const factLines = (skillInsight?.facts || []).map((item) => `- ${item}`);
+  const suggestionLines = (skillInsight?.suggestions || []).map((item) => `- ${item}`);
+  const diffLines = skillDiff?.files?.length
+    ? [skillDiff.summary || '', ...skillDiff.files].filter(Boolean).map((item) => `- ${item}`)
+    : skillDiff?.summary ? [`- ${skillDiff.summary}`] : [];
+  return [
+    `# ${heading}`,
+    '',
+    ...metaLines,
+    '',
+    `## ${labels.facts}`,
+    ...(factLines.length ? factLines : ['-']) ,
+    '',
+    `## ${labels.suggestions}`,
+    ...(suggestionLines.length ? suggestionLines : ['-']),
+    ...(diffLines.length ? ['', `## ${labels.diff}`, ...diffLines] : []),
+    '',
+  ].join('\n');
+}
+
+function downloadTextFile(filename, text) {
+  const blob = new Blob([text], { type: 'text/markdown;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = filename;
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function setBenchmarkInsightButtonState(button, label) {
+  if (!button) return;
+  button.textContent = label;
+}
+
+function copyBenchmarkInsight(index, button) {
+  const context = getBenchmarkRunContext(index);
+  if (!context?.skillInsight) return;
+  const text = buildBenchmarkInsightExportText(context.run, context.skillInsight, context.skillDiff);
+  const defaultLabel = outputLanguageText('📋 コピー', '📋 Copy');
+  navigator.clipboard.writeText(text).then(() => {
+    setBenchmarkInsightButtonState(button, outputLanguageText('✅ コピーしました', '✅ Copied'));
+    setTimeout(() => setBenchmarkInsightButtonState(button, defaultLabel), 2000);
+  }).catch(() => {
+    setBenchmarkInsightButtonState(button, outputLanguageText('❌ 失敗', '❌ Error'));
+    setTimeout(() => setBenchmarkInsightButtonState(button, defaultLabel), 2000);
+  });
+}
+
+function downloadBenchmarkInsight(index) {
+  const context = getBenchmarkRunContext(index);
+  if (!context?.skillInsight) return;
+  const manifest = context.run?.manifest || {};
+  const text = buildBenchmarkInsightExportText(context.run, context.skillInsight, context.skillDiff);
+  const filename = sanitizeBenchmarkInsightFilename([
+    'benchmark-skill-improvement',
+    manifest.promptLabel || manifest.benchmarkDefinitionId || 'run',
+    manifest.runId || 'latest',
+  ].filter(Boolean).join('-')) + '.md';
+  downloadTextFile(filename, text);
+}
+
+function renderBenchmarkInsightCard(skillInsight, extraClassName = '', actionsHtml = '') {
   if (!skillInsight) return '';
   return `<div class="benchmark-run-insight ${extraClassName}">
     <div class="benchmark-run-insight-title">${esc(outputLanguageText('Skill 改善ブリーフ', 'Skill Improvement Brief'))}</div>
     <div class="benchmark-run-insight-facts">${skillInsight.facts.map((item) => `<div class="benchmark-run-insight-fact">${esc(item)}</div>`).join('')}</div>
     <div class="benchmark-run-insight-suggestions">${skillInsight.suggestions.map((item) => `<div class="benchmark-run-insight-suggestion">${esc(item)}</div>`).join('')}</div>
+    ${actionsHtml}
   </div>`;
 }
 
@@ -4227,6 +4351,10 @@ function renderBenchmarkRunsModal() {
     const previousComparableRun = findPreviousComparableBenchmarkRun(runs, index);
     const skillDiff = buildBenchmarkSkillDiff(skillSnapshot, previousComparableRun?.skillSnapshot || null);
     const skillInsight = buildBenchmarkSkillImprovementInsight(run, previousComparableRun, skillDiff);
+    const insightActions = skillInsight ? `<div class="benchmark-run-insight-actions">
+      <button class="benchmark-run-insight-btn" onclick="copyBenchmarkInsight(${index}, this)">${esc(outputLanguageText('📋 コピー', '📋 Copy'))}</button>
+      <button class="benchmark-run-insight-btn" onclick="downloadBenchmarkInsight(${index})">${esc(outputLanguageText('⬇ ダウンロード', '⬇ Download'))}</button>
+    </div>` : '';
     const finishedAt = manifest.finishedAt || manifest.startedAt;
     const missingReasons = Array.isArray(evaluation?.reasons) && evaluation.reasons.length
       ? evaluation.reasons.join(', ')
@@ -4258,7 +4386,7 @@ function renderBenchmarkRunsModal() {
         <div class="benchmark-run-diff-summary">${esc(formatBenchmarkSkillDiffSummary(skillDiff))}</div>
         ${skillDiff.files.length ? `<div class="benchmark-run-diff-files">${skillDiff.files.map((item) => `<span>${esc(item)}</span>`).join('')}</div>` : ''}
       </div>` : ''}
-      ${renderBenchmarkInsightCard(skillInsight)}
+      ${renderBenchmarkInsightCard(skillInsight, '', insightActions)}
       ${checks.length ? `<div class="benchmark-run-artifacts">${checks.map((item) => `<div class="benchmark-run-artifact ${item.exists ? 'present' : 'missing'}"><span class="benchmark-run-artifact-path">${esc(item.path)}</span><span class="benchmark-run-artifact-status">${item.exists ? esc(outputLanguageText(`あり • ${item.sizeBytes} B`, `present • ${item.sizeBytes} B`)) : esc(outputLanguageText('欠落', 'missing'))}</span></div>`).join('')}</div>` : ''}
       ${missingReasons ? `<div class="benchmark-run-reasons">${esc(outputLanguageText('理由', 'Reasons'))}: ${esc(missingReasons)}</div>` : ''}
     </div>`;
