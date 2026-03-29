@@ -6,6 +6,14 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.59] - 2026-03-29
+
+### Changed
+
+- **Simplified skill improvement trigger**: 音声入力左横の benchmark ボタンを削除し、Skill improvement は入力欄のこれから実行するプロンプトをそのまま使うようにしました。
+- **Automatic skill targeting**: Record Skill Improvement For Next Prompt では benchmark target や target skill をユーザーが手動選択せず、このチャットで設定されている Skill と入力プロンプトから自動で対象を決めるようにしました。
+- **Localized skill improvement helper copy**: 入力欄下の Skill improvement ラベル、対象 Skill バッジ、説明文、メモ入力プレースホルダを、出力言語設定に応じて日本語または英語で表示するようにしました。
+
 ## [0.1.58] - 2026-03-29
 
 ### Changed

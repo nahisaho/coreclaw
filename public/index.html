@@ -1709,17 +1709,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
         <input type="file" id="fileInput" multiple style="display:none" onchange="handleFileSelect(event)">
         <textarea id="chatInput" rows="1" placeholder="Ask about your experiment... (Ctrl+Enter to send)"
                   onkeydown="handleInputKey(event)" oninput="autoResize(this)"></textarea>
-        <button class="btn-benchmark" id="benchmarkPromptBtn" onclick="showBenchmarkPromptSelectorModal()" title="Benchmark the next prompt">📊</button>
         <button class="btn-mic" id="micBtn" onclick="toggleSpeech()" title="Speech to text">🎤</button>
         <button class="btn-send" id="sendBtn" onclick="sendMessage()">➤</button>
       </div>
         <div class="input-benchmark-row">
-          <label><input type="checkbox" id="recordSkillImprovement" onchange="toggleSkillImprovementControls(this.checked)"> Record Skill Improvement For Next Prompt</label>
-          <select id="skillImprovementBenchmarkSelect" onchange="syncSelectedBenchmarkTarget(this.value)" disabled>
-            <option value="">Choose benchmark target for next prompt...</option>
-          </select>
+          <label id="recordSkillImprovementLabel"><input type="checkbox" id="recordSkillImprovement" onchange="toggleSkillImprovementControls(this.checked)"> <span id="recordSkillImprovementLabelText">Record Skill Improvement For Next Prompt</span></label>
+          <span class="input-benchmark-pill" id="selectedBenchmarkPromptBadge">Target skill: selected automatically from this chat</span>
           <input type="text" id="skillImprovementNote" placeholder="What changed in this skill revision?" disabled>
-          <span class="input-benchmark-pill" id="selectedBenchmarkPromptBadge">Next prompt is not linked to a benchmark target</span>
+          <span class="field-hint" id="skillImprovementAutoHint">Uses the prompt in the input box. The benchmark definition and target skill are chosen automatically from the prompt and this chat.</span>
         </div>
     </div>
   </main>
@@ -2139,21 +2136,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   </div>
 </div>
 
-<div class="modal-overlay" id="benchmarkPromptSelectorModal" onclick="if(event.target===this)closeModal('benchmarkPromptSelectorModal')">
-  <div class="modal benchmark-runs-modal">
-    <div class="modal-header">
-      <h3>📊 Benchmark The Next Prompt</h3>
-      <button class="modal-close" onclick="closeModal('benchmarkPromptSelectorModal')" title="Close">✕</button>
-    </div>
-    <div class="benchmark-runs-summary">Select which benchmark definition should evaluate the prompt you are about to send. This does not replace the prompt in the input box.</div>
-    <div class="benchmark-selector-list" id="benchmarkPromptSelectorList"></div>
-    <div class="modal-actions">
-      <button class="btn-cancel" onclick="closeModal('benchmarkPromptSelectorModal')">Cancel</button>
-      <button class="btn-primary" onclick="applySelectedBenchmarkPrompt()">Set Target For Next Prompt</button>
-    </div>
-  </div>
-</div>
-
 <script>
 // ===== State =====
 let experiments = [];
@@ -2165,11 +2147,9 @@ let persistedProcessHistory = [];
 let persistedActivityEvents = [];
 let liveActivityEvents = [];
 let cachedBenchmarkRuns = [];
-let cachedBenchmarkDefinitions = [];
 let currentMemory = null;   // current memory state for the active experiment
 let pendingTaskContexts = [];
 let currentOutputLanguage = 'ja';
-let selectedBenchmarkPromptId = '';
 let copilotAuthStatus = {
   ok: false,
   state: 'checking',
@@ -2244,6 +2224,7 @@ function applyOutputLanguagePreference(language) {
   currentOutputLanguage = language === 'en' ? 'en' : 'ja';
   updateSettingsModalLanguage();
   updateActivityLogControls();
+  updateSkillImprovementInputLanguage();
 
   for (const [taskId, task] of Object.entries(activeTasks)) {
     task.context = buildTaskContext(task.prompt || task.streamBuffer || '');
@@ -2263,6 +2244,34 @@ function applyOutputLanguagePreference(language) {
   if (document.getElementById('benchmarkRunsModal')?.classList.contains('visible')) {
     renderBenchmarkRunsModal();
   }
+}
+
+function updateSkillImprovementInputLanguage() {
+  const labelText = document.getElementById('recordSkillImprovementLabelText');
+  if (labelText) {
+    labelText.textContent = outputLanguageText(
+      '次に実行するプロンプトを Skill 改善 run として記録',
+      'Record Skill Improvement For Next Prompt',
+    );
+  }
+
+  const note = document.getElementById('skillImprovementNote');
+  if (note) {
+    note.placeholder = outputLanguageText(
+      '今回の Skill 改訂で何を変えたか',
+      'What changed in this skill revision?',
+    );
+  }
+
+  const hint = document.getElementById('skillImprovementAutoHint');
+  if (hint) {
+    hint.textContent = outputLanguageText(
+      '上の入力欄にある、これから実行するプロンプトを使います。benchmark 定義と対象 Skill は、そのプロンプトとこのチャット設定から自動で決まります。',
+      'Uses the prompt in the input box. The benchmark definition and target skill are chosen automatically from the prompt and this chat.',
+    );
+  }
+
+  updateSelectedBenchmarkPromptBadge();
 }
 
 function updateSettingsModalLanguage() {
@@ -2925,96 +2934,19 @@ async function loadBenchmarkRuns() {
   return cachedBenchmarkRuns;
 }
 
-async function loadBenchmarkDefinitions() {
-  if (cachedBenchmarkDefinitions.length) return cachedBenchmarkDefinitions;
-  try {
-    const data = await api('/benchmarks');
-    cachedBenchmarkDefinitions = Array.isArray(data.benchmarks) ? data.benchmarks : [];
-  } catch (err) {
-    console.error('loadBenchmarkDefinitions failed:', err);
-    cachedBenchmarkDefinitions = [];
-  }
-  syncSkillImprovementBenchmarkOptions();
-  return cachedBenchmarkDefinitions;
-}
-
-function syncSkillImprovementBenchmarkOptions() {
-  const select = document.getElementById('skillImprovementBenchmarkSelect');
-  if (!select) return;
-
-  const previousValue = select.value;
-  const options = ['<option value="">Choose benchmark target for next prompt...</option>']
-    .concat(cachedBenchmarkDefinitions.map((benchmark) => `<option value="${esc(benchmark.id)}">${esc(benchmark.title)}</option>`));
-  select.innerHTML = options.join('');
-  if (previousValue && cachedBenchmarkDefinitions.some((benchmark) => benchmark.id === previousValue)) {
-    select.value = previousValue;
-  }
-}
-
 function toggleSkillImprovementControls(enabled) {
-  const select = document.getElementById('skillImprovementBenchmarkSelect');
   const note = document.getElementById('skillImprovementNote');
-  if (select) select.disabled = !enabled;
   if (note) note.disabled = !enabled;
-  if (enabled && select && !select.value && selectedBenchmarkPromptId) {
-    select.value = selectedBenchmarkPromptId;
-  }
-  if (enabled && !cachedBenchmarkDefinitions.length) {
-    loadBenchmarkDefinitions();
-  }
-}
-
-function syncSelectedBenchmarkTarget(benchmarkId) {
-  selectedBenchmarkPromptId = benchmarkId || '';
-  updateSelectedBenchmarkPromptBadge();
 }
 
 function updateSelectedBenchmarkPromptBadge() {
   const badge = document.getElementById('selectedBenchmarkPromptBadge');
   if (!badge) return;
-  const selected = cachedBenchmarkDefinitions.find((benchmark) => benchmark.id === selectedBenchmarkPromptId);
-  badge.textContent = selected ? `Next prompt benchmark target: ${selected.title}` : 'Next prompt is not linked to a benchmark target';
-}
-
-function renderBenchmarkPromptSelectorModal() {
-  const list = document.getElementById('benchmarkPromptSelectorList');
-  if (!list) return;
-  if (!cachedBenchmarkDefinitions.length) {
-    list.innerHTML = '<div class="benchmark-run-empty">No benchmark definitions found.</div>';
-    return;
-  }
-
-  list.innerHTML = cachedBenchmarkDefinitions.map((benchmark) => {
-    const isActive = benchmark.id === selectedBenchmarkPromptId;
-    const requiredArtifacts = Array.isArray(benchmark.requiredArtifacts) ? benchmark.requiredArtifacts : [];
-    return `<div class="benchmark-selector-card ${isActive ? 'active' : ''}" onclick="selectBenchmarkPrompt('${esc(benchmark.id)}')">
-      <div class="benchmark-selector-title">${esc(benchmark.title)}</div>
-      <div class="benchmark-selector-meta">${esc(benchmark.id)} • ${esc(benchmark.promptSource || 'unknown source')}</div>
-      <div class="benchmark-selector-note">Evaluates the next prompt against ${esc(String(requiredArtifacts.length))} required artifact${requiredArtifacts.length === 1 ? '' : 's'}</div>
-    </div>`;
-  }).join('');
-}
-
-function selectBenchmarkPrompt(benchmarkId) {
-  selectedBenchmarkPromptId = benchmarkId;
-  renderBenchmarkPromptSelectorModal();
-}
-
-async function showBenchmarkPromptSelectorModal() {
-  await loadBenchmarkDefinitions();
-  renderBenchmarkPromptSelectorModal();
-  document.getElementById('benchmarkPromptSelectorModal').classList.add('visible');
-}
-
-function applySelectedBenchmarkPrompt() {
-  const benchmark = cachedBenchmarkDefinitions.find((entry) => entry.id === selectedBenchmarkPromptId);
-  if (!benchmark) return;
-  const benchmarkSelect = document.getElementById('skillImprovementBenchmarkSelect');
-  if (benchmarkSelect && cachedBenchmarkDefinitions.some((entry) => entry.id === benchmark.id)) {
-    benchmarkSelect.value = benchmark.id;
-  }
-  updateSelectedBenchmarkPromptBadge();
-  closeModal('benchmarkPromptSelectorModal');
+  const exp = getCurrentExperiment();
+  const skill = (exp?.skill || '').trim();
+  badge.textContent = skill
+    ? outputLanguageText(`対象スキル: ${skill}`, `Target skill: ${skill}`)
+    : outputLanguageText('対象スキル: このチャットから自動選択', 'Target skill: selected automatically from this chat');
 }
 
 // ===== Experiments =====
@@ -3140,6 +3072,7 @@ async function selectExperiment(id) {
   document.getElementById('inputArea').classList.add('visible');
   document.getElementById('expTitle').textContent = exp.name;
   updateChatSkillBadge();
+  updateSelectedBenchmarkPromptBadge();
   renderExperimentList();
 
   // Load memory state for this experiment
@@ -4767,20 +4700,16 @@ async function sendMessage() {
     prompt: content,
   });
 
-  const benchmarkId = selectedBenchmarkPromptId || '';
   const skillImprovementEnabled = document.getElementById('recordSkillImprovement')?.checked;
-  const skillImprovementBenchmarkId = document.getElementById('skillImprovementBenchmarkSelect')?.value || '';
   const skillImprovementNote = document.getElementById('skillImprovementNote')?.value.trim() || '';
 
   ws.send(JSON.stringify({
     type: 'chat',
     experimentId: currentExpId,
     content,
-    benchmarkId: benchmarkId || undefined,
-    skillImprovement: skillImprovementEnabled && skillImprovementBenchmarkId
+    skillImprovement: skillImprovementEnabled
       ? {
           enabled: true,
-          benchmarkId: skillImprovementBenchmarkId,
           note: skillImprovementNote,
         }
       : undefined,
@@ -5795,6 +5724,7 @@ async function toggleSkillForChat(skillName) {
   });
   exp.skill = skillStr;
   updateChatSkillBadge();
+  updateSelectedBenchmarkPromptBadge();
   updateSidebarSkillBadge(skillStr);
   await renderSkillSelectorList();
 }

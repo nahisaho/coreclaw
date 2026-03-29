@@ -1670,7 +1670,7 @@ test.describe('Chat Flow', () => {
       await expect(page.locator('#asp-tools-' + taskId)).toContainText('OpenAlex_search_papers');
     });
 
-    test('benchmark selector keeps the current prompt and sends benchmark target metadata', async ({ page }) => {
+    test('chat input no longer shows a benchmark button', async ({ page }) => {
       await page.addInitScript(() => {
         class MockWebSocket {
           static OPEN = 1;
@@ -1703,52 +1703,16 @@ test.describe('Chat Flow', () => {
 
         window.__mockSockets = [];
         window.WebSocket = MockWebSocket;
-      });
-
-      await page.route('**/api/benchmarks', async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            benchmarks: [{
-              id: 'benchmark-prompt-1',
-              label: 'prompt-1-test',
-              title: 'Benchmark Prompt 1',
-              promptSource: 'tests/benchmark-prompts.json',
-              requiredArtifacts: ['report.md'],
-              promptText: 'Canonical benchmark prompt body',
-            }],
-          }),
-        });
       });
 
       await page.goto('/');
 
       await createExperiment(page, 'Benchmark Improvement UI Test');
 
-      await page.fill('#chatInput', 'Prompt body about to run');
-
-      await page.locator('#benchmarkPromptBtn').click();
-      await expect(page.locator('#benchmarkPromptSelectorModal')).toContainText('This does not replace the prompt in the input box.');
-      await page.locator('.benchmark-selector-card').click();
-      await page.locator('#benchmarkPromptSelectorModal .btn-primary').click();
-
-      await expect(page.locator('#chatInput')).toHaveValue('Prompt body about to run');
-      await expect(page.locator('#selectedBenchmarkPromptBadge')).toContainText('Next prompt benchmark target: Benchmark Prompt 1');
-
-      await page.locator('#sendBtn').click();
-
-      const sentMessages = await page.evaluate(() => {
-        const socket = window.__mockSockets[0];
-        return socket ? socket.sent.map((raw) => JSON.parse(raw)) : [];
-      });
-      const chatMessage = sentMessages.findLast((message) => message.type === 'chat');
-      expect(chatMessage.content).toBe('Prompt body about to run');
-      expect(chatMessage.benchmarkId).toBe('benchmark-prompt-1');
-      expect(chatMessage.skillImprovement).toBeUndefined();
+      await expect(page.locator('#benchmarkPromptBtn')).toHaveCount(0);
     });
 
-    test('benchmark selector also feeds skill improvement metadata when enabled', async ({ page }) => {
+    test('skill improvement uses the next prompt and current chat skill automatically', async ({ page }) => {
       await page.addInitScript(() => {
         class MockWebSocket {
           static OPEN = 1;
@@ -1783,31 +1747,14 @@ test.describe('Chat Flow', () => {
         window.WebSocket = MockWebSocket;
       });
 
-      await page.route('**/api/benchmarks', async (route) => {
-        await route.fulfill({
-          status: 200,
-          contentType: 'application/json',
-          body: JSON.stringify({
-            benchmarks: [{
-              id: 'benchmark-prompt-1',
-              label: 'prompt-1-test',
-              title: 'Benchmark Prompt 1',
-              promptSource: 'tests/benchmark-prompts.json',
-              requiredArtifacts: ['report.md'],
-              promptText: 'Canonical benchmark prompt body',
-            }],
-          }),
-        });
-      });
-
       await page.goto('/');
 
       await createExperiment(page, 'Benchmark Skill Improvement UI Test');
+      await page.evaluate(async () => {
+        await toggleSkillForChat('scientist');
+      });
       await page.fill('#chatInput', 'Prompt body about to run');
-
-      await page.locator('#benchmarkPromptBtn').click();
-      await page.locator('.benchmark-selector-card').click();
-      await page.locator('#benchmarkPromptSelectorModal .btn-primary').click();
+      await expect(page.locator('#selectedBenchmarkPromptBadge')).toContainText('Target skill: scientist');
 
       await page.locator('#recordSkillImprovement').check();
       await page.fill('#skillImprovementNote', 'Adjusted tool ordering');
@@ -1819,12 +1766,32 @@ test.describe('Chat Flow', () => {
       });
       const chatMessage = sentMessages.findLast((message) => message.type === 'chat');
       expect(chatMessage.content).toBe('Prompt body about to run');
-      expect(chatMessage.benchmarkId).toBe('benchmark-prompt-1');
+      expect(chatMessage.benchmarkId).toBeUndefined();
       expect(chatMessage.skillImprovement).toEqual({
         enabled: true,
-        benchmarkId: 'benchmark-prompt-1',
         note: 'Adjusted tool ordering',
       });
+    });
+
+    test('skill improvement input copy switches between Japanese and English', async ({ page }) => {
+      await page.goto('/');
+
+      await createExperiment(page, 'Skill Improvement Copy Locale Test');
+      await page.evaluate(async () => {
+        await toggleSkillForChat('scientist');
+      });
+
+      await page.evaluate(() => applyOutputLanguagePreference('ja'));
+      await expect(page.locator('#recordSkillImprovementLabelText')).toHaveText('次に実行するプロンプトを Skill 改善 run として記録');
+      await expect(page.locator('#selectedBenchmarkPromptBadge')).toContainText('対象スキル: scientist');
+      await expect(page.locator('#skillImprovementAutoHint')).toHaveText('上の入力欄にある、これから実行するプロンプトを使います。benchmark 定義と対象 Skill は、そのプロンプトとこのチャット設定から自動で決まります。');
+      await expect(page.locator('#skillImprovementNote')).toHaveAttribute('placeholder', '今回の Skill 改訂で何を変えたか');
+
+      await page.evaluate(() => applyOutputLanguagePreference('en'));
+      await expect(page.locator('#recordSkillImprovementLabelText')).toHaveText('Record Skill Improvement For Next Prompt');
+      await expect(page.locator('#selectedBenchmarkPromptBadge')).toContainText('Target skill: scientist');
+      await expect(page.locator('#skillImprovementAutoHint')).toHaveText('Uses the prompt in the input box. The benchmark definition and target skill are chosen automatically from the prompt and this chat.');
+      await expect(page.locator('#skillImprovementNote')).toHaveAttribute('placeholder', 'What changed in this skill revision?');
     });
 
     test('benchmark results show skill snapshot diff against previous run', async ({ page }) => {

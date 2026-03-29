@@ -2220,13 +2220,24 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
       const requestedBenchmarkId = String(data.benchmarkId || '').trim();
       const requestedSkillImprovement = data.skillImprovement && data.skillImprovement.enabled
         ? {
-            benchmarkId: String(data.skillImprovement.benchmarkId || requestedBenchmarkId).trim(),
             note: String(data.skillImprovement.note || '').trim(),
           }
         : null;
       let benchmarkContext: ReturnType<typeof createBenchmarkRunContext> | null = null;
 
-      if (benchmark) {
+      if (requestedSkillImprovement && benchmark) {
+        benchmarkContext = createBenchmarkRunContext(
+          data.experimentId,
+          taskId,
+          data.content,
+          task.startedAt,
+          benchmark,
+          {
+            mode: 'skill-improvement',
+            skillImprovementNote: requestedSkillImprovement.note,
+          },
+        );
+      } else if (benchmark) {
         benchmarkContext = createBenchmarkRunContext(
           data.experimentId,
           taskId,
@@ -2235,21 +2246,6 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
           benchmark,
           { mode: 'canonical' },
         );
-      } else if (requestedSkillImprovement?.benchmarkId) {
-        const targetBenchmark = getBenchmarkDefinitionById(requestedSkillImprovement.benchmarkId);
-        if (targetBenchmark) {
-          benchmarkContext = createBenchmarkRunContext(
-            data.experimentId,
-            taskId,
-            data.content,
-            task.startedAt,
-            targetBenchmark,
-            {
-              mode: 'skill-improvement',
-              skillImprovementNote: requestedSkillImprovement.note,
-            },
-          );
-        }
       } else if (requestedBenchmarkId) {
         const targetBenchmark = getBenchmarkDefinitionById(requestedBenchmarkId);
         if (targetBenchmark) {
