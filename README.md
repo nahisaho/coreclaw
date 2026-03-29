@@ -205,8 +205,8 @@ Detailed instructions for the agent...
 | `CREDENTIAL_PROXY_PORT` | `3001` | Credential proxy port |
 | `ASSISTANT_NAME` | `Andy` | Bot trigger name |
 | `CONTAINER_IMAGE` | `coreclaw-agent:latest` | Docker image for agents |
-| `CONTAINER_TIMEOUT` | `3600000` | Agent timeout (ms) |
-| `IDLE_TIMEOUT` | `300000` | Idle reuse window before closing a ChatGroup container (ms) |
+| `CONTAINER_TIMEOUT` | `10800000` | Agent timeout (ms) |
+| `IDLE_TIMEOUT` | `1800000` | Idle reuse window before closing a ChatGroup container (ms) |
 | `MAX_CONCURRENT_CONTAINERS` | `5` | Max parallel agents |
 | `LOG_LEVEL` | `info` | Log level |
 

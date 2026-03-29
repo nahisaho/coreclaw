@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.64] - 2026-03-30
+
+### Changed
+
+- **Longer container defaults**: Container実行タイムアウトの既定値を3時間、idleタイムアウトの既定値を30分に引き上げました。
+- **Updated timeout setup defaults**: `setup.sh`、`.env.example`、READMEの既定値説明も新しいタイムアウト設定に合わせて更新しました。
+
 ## [0.1.63] - 2026-03-29
 
 ### Changed
