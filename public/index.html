@@ -1055,7 +1055,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .msg-search-preview { font-size: 13px; color: var(--text-secondary); line-height: 1.5; word-break: break-word; }
 
 /* Artifacts modal */
-.modal.artifacts-modal { min-width: 500px; max-width: 600px; max-height: 70vh; display: flex; flex-direction: column; }
+.modal.artifacts-modal { min-width: 560px; max-width: 720px; max-height: 70vh; display: flex; flex-direction: column; }
 .modal.activity-log-modal { min-width: 620px; max-width: 860px; max-height: 78vh; display: flex; flex-direction: column; }
 .process-history-summary {
   font-size: 12px;
@@ -1160,16 +1160,48 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .artifacts-list {
   flex: 1; overflow-y: auto; max-height: 50vh;
 }
+.artifacts-list.tree-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
 .artifacts-empty {
   text-align: center; color: var(--text-muted); padding: 30px; font-size: 13px;
 }
-.artifact-item {
+.artifact-item,
+.artifact-tree-row {
   display: flex; align-items: center; gap: 10px;
   padding: 8px 12px; border-radius: var(--radius);
   border: 1px solid var(--border); margin-bottom: 6px;
   background: var(--bg-tertiary); transition: background .1s;
 }
-.artifact-item:hover { background: var(--bg-hover); }
+.artifact-item:hover,
+.artifact-tree-row:hover { background: var(--bg-hover); }
+.artifact-tree-row {
+  margin-bottom: 0;
+  padding-left: calc(12px + (var(--depth, 0) * 18px));
+}
+.artifact-tree-row.directory {
+  cursor: pointer;
+}
+.artifact-tree-row.directory {
+  background: color-mix(in srgb, var(--bg-tertiary) 80%, var(--bg-hover) 20%);
+}
+.artifact-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  color: var(--text-secondary);
+  font-size: 11px;
+  flex-shrink: 0;
+}
+.artifact-tree-row.directory .artifact-name {
+  font-weight: 600;
+}
+.artifact-tree-row.directory .artifact-actions {
+  display: none;
+}
 .artifact-icon { font-size: 18px; flex-shrink: 0; }
 .artifact-info { flex: 1; min-width: 0; }
 .artifact-name {
@@ -1931,6 +1963,8 @@ let liveActivityEvents = [];
 let currentMemory = null;   // current memory state for the active experiment
 let pendingTaskContexts = [];
 let currentOutputLanguage = 'ja';
+let currentArtifactEntries = [];
+let collapsedArtifactDirs = new Set();
 let copilotAuthStatus = {
   ok: false,
   state: 'checking',
@@ -3065,38 +3099,105 @@ function onMsgSearchInput(value) {
 
 async function showArtifacts() {
   if (!currentExpId) return;
-  const artifacts = await api(`/experiments/${currentExpId}/artifacts`);
+  let artifacts = [];
+
+  try {
+    artifacts = await api(`/experiments/${currentExpId}/artifacts/tree`);
+  } catch (err) {
+    console.warn('artifact tree load failed, falling back to file list:', err);
+    const filepaths = await api(`/experiments/${currentExpId}/artifacts`);
+    artifacts = filepaths.map((filepath) => ({ path: filepath, type: 'file' }));
+  }
+
+  currentArtifactEntries = Array.isArray(artifacts)
+    ? artifacts
+      .filter((entry) => entry && typeof entry.path === 'string' && typeof entry.type === 'string')
+      .sort((left, right) => {
+        const pathCompare = left.path.localeCompare(right.path);
+        if (pathCompare !== 0) return pathCompare;
+        if (left.type === right.type) return 0;
+        return left.type === 'directory' ? -1 : 1;
+      })
+    : [];
+
+  const validDirectories = new Set(
+    currentArtifactEntries
+      .filter((entry) => entry.type === 'directory')
+      .map((entry) => entry.path),
+  );
+  collapsedArtifactDirs = new Set([...collapsedArtifactDirs].filter((path) => validDirectories.has(path)));
+
+  renderArtifactsTree();
+  document.getElementById('artifactsModal').classList.add('visible');
+}
+
+function renderArtifactsTree() {
   const list = document.getElementById('artifactsList');
   const empty = document.getElementById('artifactsEmpty');
+  const visibleArtifacts = currentArtifactEntries.filter((entry) => {
+    const parts = entry.path.split('/');
+    const ancestors = parts.slice(0, -1);
+    for (let i = 1; i <= ancestors.length; i++) {
+      const ancestorPath = ancestors.slice(0, i).join('/');
+      if (collapsedArtifactDirs.has(ancestorPath)) return false;
+    }
+    return true;
+  });
 
-  if (artifacts.length === 0) {
+  list.classList.add('tree-list');
+
+  if (currentArtifactEntries.length === 0) {
     list.innerHTML = '';
     empty.style.display = '';
   } else {
     empty.style.display = 'none';
-    list.innerHTML = artifacts.map(filepath => {
+    list.innerHTML = visibleArtifacts.map((entry) => {
+      const filepath = entry.path;
       const name = filepath.split('/').pop();
+      const depth = Math.max(0, filepath.split('/').length - 1);
+      if (entry.type === 'directory') {
+        const isCollapsed = collapsedArtifactDirs.has(filepath);
+        return `<div class="artifact-tree-row directory" data-path="${esc(filepath)}" data-collapsed="${isCollapsed ? 'true' : 'false'}" style="--depth:${depth}" onclick="toggleArtifactDirectory(this.dataset.path)">
+          <span class="artifact-toggle">${isCollapsed ? '▶' : '▼'}</span>
+          <span class="artifact-icon">${isCollapsed ? '📁' : '📂'}</span>
+          <div class="artifact-info">
+            <div class="artifact-name">${esc(name)}</div>
+            ${filepath !== name ? `<div class="artifact-path">${esc(filepath)}</div>` : ''}
+          </div>
+        </div>`;
+      }
+
       const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
       const icon = getFileIcon(ext);
       const viewable = isViewable(ext);
       const viewUrl = `/api/experiments/${currentExpId}/artifacts/${filepath}`;
       const escapedFp = esc(filepath);
-      return `<div class="artifact-item" data-fp="${escapedFp}">
+      return `<div class="artifact-tree-row file" data-fp="${escapedFp}" data-path="${escapedFp}" style="--depth:${depth}">
+        <span class="artifact-toggle"></span>
         <span class="artifact-icon">${icon}</span>
         <div class="artifact-info">
           <div class="artifact-name">${esc(name)}</div>
           ${filepath !== name ? `<div class="artifact-path">${esc(filepath)}</div>` : ''}
         </div>
         <div class="artifact-actions">
-          ${viewable ? `<button class="artifact-btn view-btn" onclick="viewArtifact(this.closest('[data-fp]').dataset.fp)">👁 View</button>` : ''}
-          <button class="artifact-btn dl-btn" onclick="downloadArtifact('${viewUrl}', '${esc(name)}')">⬇ Download</button>
+          ${viewable ? `<button class="artifact-btn view-btn" onclick="viewArtifact(this.closest('[data-fp]').dataset.fp); event.stopPropagation();">👁 View</button>` : ''}
+          <button class="artifact-btn dl-btn" onclick="downloadArtifact('${viewUrl}', '${esc(name)}'); event.stopPropagation();">⬇ Download</button>
         </div>
       </div>`;
     }).join('');
   }
 
-  document.getElementById('artifactsActions').style.display = artifacts.length > 0 ? '' : 'none';
-  document.getElementById('artifactsModal').classList.add('visible');
+  document.getElementById('artifactsActions').style.display = currentArtifactEntries.length > 0 ? '' : 'none';
+}
+
+function toggleArtifactDirectory(filepath) {
+  if (!filepath) return;
+  if (collapsedArtifactDirs.has(filepath)) {
+    collapsedArtifactDirs.delete(filepath);
+  } else {
+    collapsedArtifactDirs.add(filepath);
+  }
+  renderArtifactsTree();
 }
 
 function downloadAllArtifacts() {

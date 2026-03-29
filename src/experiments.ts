@@ -61,6 +61,11 @@ export interface ExperimentActivityEvent {
   status?: string;
 }
 
+export interface ArtifactEntry {
+  path: string;
+  type: 'file' | 'directory';
+}
+
 // ---------------------------------------------------------------------------
 // Database helpers (lazy‑initialized via initExperimentsDb)
 // ---------------------------------------------------------------------------
@@ -737,35 +742,57 @@ export function saveArtifact(
   return filePath;
 }
 
-function walkDir(dirPath: string, prefix: string, results: string[]): void {
+function shouldSkipArtifactEntry(entry: fs.Dirent): boolean {
+  if (['.copilot', '.github', 'node_modules', 'agent-runner-src', '__pycache__'].includes(entry.name)) {
+    return true;
+  }
+  return entry.isFile() && /^container-.*\.log$/.test(entry.name);
+}
+
+function walkArtifactEntries(dirPath: string, prefix: string, results: ArtifactEntry[]): void {
   if (!fs.existsSync(dirPath)) return;
-  for (const entry of fs.readdirSync(dirPath, { withFileTypes: true })) {
-    // Skip logs, .copilot, .github, node_modules
-    if (['.copilot', '.github', 'node_modules', 'agent-runner-src', '__pycache__'].includes(entry.name)) continue;
-    // Skip container run log files (container-*.log) but keep other log content
-    if (entry.isFile() && entry.name.match(/^container-.*\.log$/)) continue;
+  const entries = fs.readdirSync(dirPath, { withFileTypes: true })
+    .sort((left, right) => left.name.localeCompare(right.name));
+  for (const entry of entries) {
+    if (shouldSkipArtifactEntry(entry)) continue;
     const rel = prefix ? `${prefix}/${entry.name}` : entry.name;
     if (entry.isDirectory()) {
-      walkDir(path.join(dirPath, entry.name), rel, results);
+      results.push({ path: rel, type: 'directory' });
+      walkArtifactEntries(path.join(dirPath, entry.name), rel, results);
     } else {
-      results.push(rel);
+      results.push({ path: rel, type: 'file' });
     }
   }
 }
 
 export function listArtifacts(experimentId: string): string[] {
-  const results: string[] = [];
+  return listArtifactEntries(experimentId)
+    .filter((entry) => entry.type === 'file')
+    .map((entry) => entry.path);
+}
+
+export function listArtifactEntries(experimentId: string): ArtifactEntry[] {
+  const results: ArtifactEntry[] = [];
 
   // 1. Primary artifacts directory
   const artifactsDir = getArtifactsDir(experimentId);
-  walkDir(artifactsDir, '', results);
+  walkArtifactEntries(artifactsDir, '', results);
 
   // 2. Container workspace (groups/experiment-{id}/)
   const wsDir = getWorkspaceDir(experimentId);
-  walkDir(wsDir, '', results);
+  walkArtifactEntries(wsDir, '', results);
 
   // Deduplicate
-  return [...new Set(results)].sort();
+  const deduped = new Map<string, ArtifactEntry>();
+  for (const entry of results) {
+    deduped.set(`${entry.type}:${entry.path}`, entry);
+  }
+  return [...deduped.values()].sort((left, right) => {
+    const pathCompare = left.path.localeCompare(right.path);
+    if (pathCompare !== 0) return pathCompare;
+    if (left.type === right.type) return 0;
+    return left.type === 'directory' ? -1 : 1;
+  });
 }
 
 /**

@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.62] - 2026-03-29
+
+### Changed
+
+- **Artifact tree browsing**: Artifactsモーダルを階層ツリー表示に変更し、フォルダーの折りたたみ・再展開ができるようにしました。
+- **Artifact ZIP directory preservation**: Artifact ZIPダウンロードで空ディレクトリも含めて保持し、グループ内の成果物構成をそのまま持ち出せるようにしました。
+
 ## [0.1.61] - 2026-03-29
 
 ### Removed

@@ -3,6 +3,28 @@ import path from 'path';
 
 import { test, expect } from '@playwright/test';
 
+function listZipEntryNames(zipBuffer: Buffer): string[] {
+  const names: string[] = [];
+  let offset = 0;
+
+  while (offset < zipBuffer.length - 4) {
+    const signature = zipBuffer.readUInt32LE(offset);
+    if (signature !== 0x04034b50) break;
+
+    const compressedSize = zipBuffer.readUInt32LE(offset + 18);
+    const nameLength = zipBuffer.readUInt16LE(offset + 26);
+    const extraLength = zipBuffer.readUInt16LE(offset + 28);
+    const nameStart = offset + 30;
+    const name = zipBuffer.subarray(nameStart, nameStart + nameLength).toString('utf-8');
+    const dataStart = nameStart + nameLength + extraLength;
+
+    names.push(name);
+    offset = dataStart + compressedSize;
+  }
+
+  return names;
+}
+
 // ============================================================
 // 1. Page Load & Basic UI
 // ============================================================
@@ -160,6 +182,47 @@ test.describe('Experiment Management', () => {
     const item = page.locator('.experiment-item').first();
     await item.hover();
     await expect(item.locator('.exp-actions')).toBeVisible();
+  });
+
+  test('artifacts modal renders folders as a tree', async ({ page }) => {
+    await page.route('**/api/experiments/*/artifacts/tree', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          { path: 'data', type: 'directory' },
+          { path: 'data/empty', type: 'directory' },
+          { path: 'figures', type: 'directory' },
+          { path: 'figures/plot.png', type: 'file' },
+          { path: 'logs', type: 'directory' },
+          { path: 'logs/process-log.jsonl', type: 'file' },
+          { path: 'report.md', type: 'file' },
+        ]),
+      });
+    });
+
+    await page.goto('/');
+    await page.click('button:has-text("New Chat")');
+    await page.fill('#expNameInput', 'Artifacts Tree');
+    await page.click('#newExpModal .btn-primary');
+
+    await page.click('button:has-text("Artifacts")');
+
+    await expect(page.locator('#artifactsModal')).toHaveClass(/visible/);
+    await expect(page.locator('.artifact-tree-row.directory')).toHaveCount(4);
+    await expect(page.locator('.artifact-tree-row.file')).toHaveCount(3);
+    await expect(page.locator('.artifact-tree-row.directory[data-path="data"]')).toHaveAttribute('data-collapsed', 'false');
+    await expect(page.locator('.artifact-tree-row.directory[data-path="data/empty"] .artifact-name')).toHaveText('empty');
+    await expect(page.locator('.artifact-tree-row.file[data-path="logs/process-log.jsonl"] .artifact-name')).toHaveText('process-log.jsonl');
+    await expect(page.locator('#artifactsActions .btn-primary')).toContainText('Download All');
+
+    await page.locator('.artifact-tree-row.directory[data-path="data"]').click();
+    await expect(page.locator('.artifact-tree-row.directory[data-path="data"]')).toHaveAttribute('data-collapsed', 'true');
+    await expect(page.locator('.artifact-tree-row.directory[data-path="data/empty"]')).toHaveCount(0);
+
+    await page.locator('.artifact-tree-row.directory[data-path="data"]').click();
+    await expect(page.locator('.artifact-tree-row.directory[data-path="data"]')).toHaveAttribute('data-collapsed', 'false');
+    await expect(page.locator('.artifact-tree-row.directory[data-path="data/empty"] .artifact-name')).toHaveText('empty');
   });
 });
 
@@ -1715,6 +1778,39 @@ test.describe('REST API', () => {
 
     // Cleanup
     await request.delete(`/api/experiments/${body.id}`);
+  });
+
+  test('GET /api/experiments/:id/download includes empty directories in ZIP', async ({ request }) => {
+    const createRes = await request.post('/api/experiments', {
+      data: { name: 'ZIP Tree Test', description: 'Artifacts ZIP coverage' },
+    });
+    expect(createRes.status()).toBe(201);
+    const exp = await createRes.json();
+
+    const workspaceDir = path.join(process.cwd(), 'groups', `experiment-${exp.id}`);
+    const artifactsDir = path.join(process.cwd(), 'data', 'experiments', exp.id, 'artifacts');
+
+    fs.mkdirSync(path.join(workspaceDir, 'results', 'empty-child'), { recursive: true });
+    fs.mkdirSync(path.join(artifactsDir, 'figures'), { recursive: true });
+    fs.writeFileSync(path.join(workspaceDir, 'report.md'), '# Report\n');
+    fs.writeFileSync(path.join(artifactsDir, 'figures', 'plot.json'), '{"ok":true}\n');
+
+    try {
+      const res = await request.get(`/api/experiments/${exp.id}/download`);
+      expect(res.ok()).toBeTruthy();
+      expect(res.headers()['content-type']).toContain('application/zip');
+
+      const names = listZipEntryNames(Buffer.from(await res.body()));
+      expect(names).toContain('results/');
+      expect(names).toContain('results/empty-child/');
+      expect(names).toContain('report.md');
+      expect(names).toContain('figures/');
+      expect(names).toContain('figures/plot.json');
+    } finally {
+      fs.rmSync(workspaceDir, { recursive: true, force: true });
+      fs.rmSync(path.join(process.cwd(), 'data', 'experiments', exp.id), { recursive: true, force: true });
+      await request.delete(`/api/experiments/${exp.id}`);
+    }
   });
 
   test('GET /api/skills returns created skills', async ({ request }) => {

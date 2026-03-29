@@ -27,6 +27,7 @@ import {
   updateMessageContent,
   deleteMessage,
   searchMessages,
+  listArtifactEntries,
   listArtifacts,
   appendCompletedProcessHistory,
   appendActivityEvent,
@@ -391,15 +392,24 @@ function splitBuffer(buf: Buffer, delimiter: Buffer): Buffer[] {
 // ZIP file builder (minimal, no dependencies)
 // ---------------------------------------------------------------------------
 
-function buildZip(files: { name: string; data: Buffer }[]): Buffer {
+type ZipEntry = {
+  name: string;
+  data?: Buffer;
+  type?: 'file' | 'directory';
+};
+
+function buildZip(entries: ZipEntry[]): Buffer {
   const parts: Buffer[] = [];
   const centralDir: Buffer[] = [];
   let offset = 0;
 
-  for (const file of files) {
-    const nameBytes = Buffer.from(file.name, 'utf-8');
-    const crc = crc32(file.data);
-    const size = file.data.length;
+  for (const entry of entries) {
+    const isDirectory = entry.type === 'directory';
+    const normalizedName = isDirectory && !entry.name.endsWith('/') ? `${entry.name}/` : entry.name;
+    const data = isDirectory ? Buffer.alloc(0) : (entry.data || Buffer.alloc(0));
+    const nameBytes = Buffer.from(normalizedName, 'utf-8');
+    const crc = isDirectory ? 0 : crc32(data);
+    const size = data.length;
 
     // Local file header (store, no compression for simplicity)
     const local = Buffer.alloc(30 + nameBytes.length);
@@ -416,7 +426,7 @@ function buildZip(files: { name: string; data: Buffer }[]): Buffer {
     local.writeUInt16LE(0, 28);            // extra field length
     nameBytes.copy(local, 30);
 
-    parts.push(local, file.data);
+    parts.push(local, data);
 
     // Central directory entry
     const central = Buffer.alloc(46 + nameBytes.length);
@@ -435,12 +445,12 @@ function buildZip(files: { name: string; data: Buffer }[]): Buffer {
     central.writeUInt16LE(0, 32);           // comment
     central.writeUInt16LE(0, 34);           // disk start
     central.writeUInt16LE(0, 36);           // internal attrs
-    central.writeUInt32LE(0, 38);           // external attrs
+    central.writeUInt32LE(isDirectory ? 0x10 : 0, 38); // external attrs (DOS directory flag)
     central.writeUInt32LE(offset, 42);      // local header offset
     nameBytes.copy(central, 46);
 
     centralDir.push(central);
-    offset += local.length + file.data.length;
+    offset += local.length + data.length;
   }
 
   const centralDirBuf = Buffer.concat(centralDir);
@@ -448,8 +458,8 @@ function buildZip(files: { name: string; data: Buffer }[]): Buffer {
   eocd.writeUInt32LE(0x06054b50, 0);        // signature
   eocd.writeUInt16LE(0, 4);                 // disk
   eocd.writeUInt16LE(0, 6);                 // disk with cd
-  eocd.writeUInt16LE(files.length, 8);      // entries on disk
-  eocd.writeUInt16LE(files.length, 10);     // total entries
+  eocd.writeUInt16LE(entries.length, 8);      // entries on disk
+  eocd.writeUInt16LE(entries.length, 10);     // total entries
   eocd.writeUInt32LE(centralDirBuf.length, 12); // cd size
   eocd.writeUInt32LE(offset, 16);           // cd offset
   eocd.writeUInt16LE(0, 20);               // comment length
@@ -491,7 +501,7 @@ function extractZip(zipBuf: Buffer): { name: string; data: Buffer }[] {
     const rawData = zipBuf.subarray(dataStart, dataStart + compressedSize);
 
     // Skip directories
-    if (!name.endsWith('/') && compressedSize > 0) {
+    if (!name.endsWith('/')) {
       if (compressionMethod === 0) {
         files.push({ name, data: rawData });
       } else if (compressionMethod === 8) {
@@ -1165,6 +1175,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     return;
   }
 
+  // GET /api/experiments/:id/artifacts/tree
+  const artTreeMatch = pathname.match(/^\/api\/experiments\/([^/]+)\/artifacts\/tree$/);
+  if (method === 'GET' && artTreeMatch) {
+    const artifacts = listArtifactEntries(artTreeMatch[1]);
+    sendJson(res, 200, artifacts);
+    return;
+  }
+
   // GET /api/experiments/:id/artifacts
   const artMatch = pathname.match(/^\/api\/experiments\/([^/]+)\/artifacts$/);
   if (method === 'GET' && artMatch) {
@@ -1229,19 +1247,23 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     const exp = getExperiment(expId);
     if (!exp) { sendJson(res, 404, { error: 'Experiment not found' }); return; }
 
-    const artifacts = listArtifacts(expId);
+    const artifacts = listArtifactEntries(expId);
     if (artifacts.length === 0) { sendJson(res, 404, { error: 'No artifacts' }); return; }
 
     const safeName = exp.name.replace(/[^a-zA-Z0-9_-]/g, '_');
     const encodedName = encodeURIComponent(exp.name) + '.zip';
 
     // Build ZIP using Node.js (no dependencies)
-    const files: { name: string; data: Buffer }[] = [];
+    const files: ZipEntry[] = [];
 
     for (const artifact of artifacts) {
-      const filePath = resolveArtifactPath(expId, artifact);
+      if (artifact.type === 'directory') {
+        files.push({ name: artifact.path, type: 'directory' });
+        continue;
+      }
+      const filePath = resolveArtifactPath(expId, artifact.path);
       if (filePath) {
-        files.push({ name: artifact, data: fs.readFileSync(filePath) });
+        files.push({ name: artifact.path, data: fs.readFileSync(filePath), type: 'file' });
       }
     }
 
@@ -1254,7 +1276,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         const role = m.role === 'user' ? '👤 User' : m.role === 'assistant' ? '🤖 CoreClaw' : '⚙️ System';
         logLines.push(`## ${role} (${ts})\n\n${m.content}\n\n---\n`);
       }
-      files.push({ name: 'conversation.md', data: Buffer.from(logLines.join('\n'), 'utf-8') });
+      files.push({ name: 'conversation.md', data: Buffer.from(logLines.join('\n'), 'utf-8'), type: 'file' });
     }
 
     const zipBuffer = buildZip(files);

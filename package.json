@@ -1,6 +1,6 @@
 {
   "name": "coreclaw",
-  "version": "0.1.61",
+  "version": "0.1.62",
   "description": "AI assistant with Chat frontend and Agent Skills, powered by GitHub Copilot CLI in Docker containers.",
   "type": "module",
   "main": "dist/index.js",
