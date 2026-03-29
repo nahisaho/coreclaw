@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.63] - 2026-03-29
+
+### Changed
+
+- **Wider settings modal**: Settingsモーダルの幅をビューポートの80%に拡大し、各タブの設定項目をより広く確認できるようにしました。
+
 ## [0.1.62] - 2026-03-29
 
 ### Changed
