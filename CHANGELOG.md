@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.56] - 2026-03-29
+
+### Changed
+
+- **Skill improvement benchmarking**: 入力欄から定義済みベンチマークプロンプトをそのまま読み込み、スキル改善用の実行を記録できるようにしました。
+- **Skill revision diff in Benchmark Results**: Benchmark Resultsに、同一スキルの直前実行と比較したスキルスナップショット差分要約を表示するようにしました。
+
 ## [0.1.55] - 2026-03-29
 
 ### Changed

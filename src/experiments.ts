@@ -66,6 +66,9 @@ export interface BenchmarkRunManifest {
   runId: string;
   experimentId: string;
   taskId: string;
+  mode?: 'canonical' | 'skill-improvement';
+  benchmarkDefinitionId?: string;
+  benchmarkDefinitionTitle?: string;
   promptSource: string;
   promptLabel: string;
   promptText: string;
@@ -78,12 +81,33 @@ export interface BenchmarkRunManifest {
   githubMcpTools?: string;
   containerImage?: string;
   copilotAuthSource?: string;
+  skillImprovementNote?: string;
+  skillSnapshotHash?: string;
+  skillSnapshotFileCount?: number;
+  skillSnapshotCapturedAt?: string;
+}
+
+export interface BenchmarkSkillSnapshotFile {
+  path: string;
+  sizeBytes: number;
+  sha256: string;
+  content: string;
+}
+
+export interface BenchmarkSkillSnapshot {
+  runId: string;
+  skillName: string;
+  capturedAt: string;
+  sha256: string;
+  fileCount: number;
+  files: BenchmarkSkillSnapshotFile[];
 }
 
 export interface BenchmarkRunRecord {
   manifest: BenchmarkRunManifest;
   artifactCheck: BenchmarkArtifactCheck | null;
   evaluation: BenchmarkEvaluationResult | null;
+  skillSnapshot: BenchmarkSkillSnapshot | null;
 }
 
 // ---------------------------------------------------------------------------
@@ -791,6 +815,17 @@ export function writeBenchmarkEvaluationResult(
   );
 }
 
+export function writeBenchmarkSkillSnapshot(
+  experimentId: string,
+  runId: string,
+  payload: unknown,
+): void {
+  fs.writeFileSync(
+    path.join(benchmarkRunsDir(experimentId), `${runId}.skill.json`),
+    JSON.stringify(payload, null, 2) + '\n',
+  );
+}
+
 export function listBenchmarkRuns(experimentId: string): BenchmarkRunRecord[] {
   const dir = benchmarkRunsDir(experimentId);
   if (!fs.existsSync(dir)) return [];
@@ -805,6 +840,7 @@ export function listBenchmarkRuns(experimentId: string): BenchmarkRunRecord[] {
         manifest,
         artifactCheck: readJsonFile<BenchmarkArtifactCheck>(path.join(dir, `${manifest.runId}.artifacts.json`)),
         evaluation: readJsonFile<BenchmarkEvaluationResult>(path.join(dir, `${manifest.runId}.evaluation.json`)),
+        skillSnapshot: readJsonFile<BenchmarkSkillSnapshot>(path.join(dir, `${manifest.runId}.skill.json`)),
       };
     })
     .filter((record): record is BenchmarkRunRecord => record !== null)

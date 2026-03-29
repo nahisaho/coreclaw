@@ -5,6 +5,7 @@
 import { createServer, IncomingMessage, ServerResponse } from 'http';
 import fs from 'fs';
 import path from 'path';
+import { createHash } from 'crypto';
 import { fileURLToPath } from 'url';
 
 import { WebSocketServer, WebSocket } from 'ws';
@@ -15,6 +16,7 @@ import {
   createExperiment,
   type ExperimentActivityEvent,
   type BenchmarkRunManifest,
+  type BenchmarkSkillSnapshot,
   getExperiment,
   listExperiments,
   updateExperiment,
@@ -43,6 +45,7 @@ import {
   writeBenchmarkRunManifest,
   writeBenchmarkArtifactCheck,
   writeBenchmarkEvaluationResult,
+  writeBenchmarkSkillSnapshot,
   getArtifactSizeBytes,
 } from './experiments.js';
 import {
@@ -72,6 +75,8 @@ import { checkCopilotAuthStatus, resolveGitHubToken, type CopilotAuthStatus } fr
 import {
   buildBenchmarkArtifactCheck,
   buildBenchmarkEvaluationResult,
+  getBenchmarkDefinitionById,
+  loadBenchmarkDefinitions,
   matchBenchmarkDefinition,
 } from './benchmark-runs.js';
 import { CONTAINER_IMAGE } from './config.js';
@@ -796,9 +801,14 @@ interface ActiveTask {
   _lastStatusAt?: number;  // timestamp of the last non-heartbeat status line
   _heartbeatSent?: boolean;
   benchmarkRunId?: string;
+  benchmarkMode?: 'canonical' | 'skill-improvement';
+  benchmarkDefinitionId?: string;
+  benchmarkDefinitionTitle?: string;
   benchmarkLabel?: string;
   benchmarkPromptSource?: string;
   benchmarkRequiredArtifacts?: string[];
+  skillImprovementNote?: string;
+  skillSnapshot?: BenchmarkSkillSnapshot | null;
 }
 
 const activeTasks = new Map<string, ActiveTask>();
@@ -845,6 +855,98 @@ function generateBenchmarkRunId(): string {
   return `bench-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
+function buildSkillSnapshot(skillName: string): BenchmarkSkillSnapshot | null {
+  const normalizedName = String(skillName || '').trim();
+  if (!normalizedName) return null;
+
+  const skillDir = path.resolve(process.cwd(), 'skills', normalizedName);
+  if (!fs.existsSync(skillDir) || !fs.statSync(skillDir).isDirectory()) return null;
+
+  const files: BenchmarkSkillSnapshot['files'] = [];
+  const walk = (dir: string, prefix: string) => {
+    for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
+      if (entry.name === '.coreclaw-marketplace.json') continue;
+      const entryPath = path.join(dir, entry.name);
+      const relPath = prefix ? `${prefix}/${entry.name}` : entry.name;
+      if (entry.isDirectory()) {
+        walk(entryPath, relPath);
+        continue;
+      }
+      const content = fs.readFileSync(entryPath, 'utf-8');
+      files.push({
+        path: relPath,
+        sizeBytes: Buffer.byteLength(content, 'utf-8'),
+        sha256: createHash('sha256').update(content).digest('hex'),
+        content,
+      });
+    }
+  };
+  walk(skillDir, '');
+
+  const aggregate = createHash('sha256');
+  for (const file of files.sort((left, right) => left.path.localeCompare(right.path))) {
+    aggregate.update(file.path);
+    aggregate.update('\0');
+    aggregate.update(file.sha256);
+    aggregate.update('\0');
+  }
+
+  return {
+    runId: '',
+    skillName: normalizedName,
+    capturedAt: new Date().toISOString(),
+    sha256: aggregate.digest('hex'),
+    fileCount: files.length,
+    files,
+  };
+}
+
+function createBenchmarkRunContext(
+  experimentId: string,
+  taskId: string,
+  promptText: string,
+  startedAt: string,
+  benchmark: { id: string; title: string; label: string; promptSource: string; requiredArtifacts: string[] },
+  options?: { mode?: 'canonical' | 'skill-improvement'; skillImprovementNote?: string },
+): { manifest: BenchmarkRunManifest; requiredArtifacts: string[]; skillSnapshot: BenchmarkSkillSnapshot | null } {
+  const experiment = getExperiment(experimentId);
+  const settings = loadSettings();
+  const { source } = resolveGitHubToken();
+  const skillSnapshot = buildSkillSnapshot(experiment?.skill || '');
+  const runId = generateBenchmarkRunId();
+  if (skillSnapshot) {
+    skillSnapshot.runId = runId;
+  }
+
+  return {
+    manifest: {
+      runId,
+      experimentId,
+      taskId,
+      mode: options?.mode || 'canonical',
+      benchmarkDefinitionId: benchmark.id,
+      benchmarkDefinitionTitle: benchmark.title,
+      promptSource: benchmark.promptSource,
+      promptLabel: benchmark.label,
+      promptText,
+      startedAt,
+      status: 'running',
+      model: settings.copilot_model || '',
+      skill: experiment?.skill || '',
+      enabledMcpServers: parseEnabledMcpServers(experiment?.mcp_servers || ''),
+      githubMcpTools: settings.github_mcp_tools || '',
+      containerImage: CONTAINER_IMAGE,
+      copilotAuthSource: source,
+      skillImprovementNote: options?.skillImprovementNote || '',
+      skillSnapshotHash: skillSnapshot?.sha256 || '',
+      skillSnapshotFileCount: skillSnapshot?.fileCount || 0,
+      skillSnapshotCapturedAt: skillSnapshot?.capturedAt || '',
+    },
+    requiredArtifacts: benchmark.requiredArtifacts,
+    skillSnapshot,
+  };
+}
+
 function parseEnabledMcpServers(rawValue: string): string[] {
   try {
     if (!rawValue) return [];
@@ -866,26 +968,7 @@ function createBenchmarkRunManifest(
   const benchmark = matchBenchmarkDefinition(promptText);
   if (!benchmark) return null;
 
-  const experiment = getExperiment(experimentId);
-  const settings = loadSettings();
-  const { source } = resolveGitHubToken();
-
-  return {
-    runId: generateBenchmarkRunId(),
-    experimentId,
-    taskId,
-    promptSource: benchmark.promptSource,
-    promptLabel: benchmark.label,
-    promptText,
-    startedAt,
-    status: 'running',
-    model: settings.copilot_model || '',
-    skill: experiment?.skill || '',
-    enabledMcpServers: parseEnabledMcpServers(experiment?.mcp_servers || ''),
-    githubMcpTools: settings.github_mcp_tools || '',
-    containerImage: CONTAINER_IMAGE,
-    copilotAuthSource: source,
-  };
+  return createBenchmarkRunContext(experimentId, taskId, promptText, startedAt, benchmark).manifest;
 }
 
 function finalizeBenchmarkRun(task: ActiveTask, finalResponse: string): void {
@@ -899,6 +982,9 @@ function finalizeBenchmarkRun(task: ActiveTask, finalResponse: string): void {
     runId: task.benchmarkRunId,
     experimentId: task.experimentId,
     taskId: task.id,
+    mode: task.benchmarkMode || 'canonical',
+    benchmarkDefinitionId: task.benchmarkDefinitionId || '',
+    benchmarkDefinitionTitle: task.benchmarkDefinitionTitle || '',
     promptSource: task.benchmarkPromptSource || 'tests/benchmark-prompts.json',
     promptLabel: task.benchmarkLabel,
     promptText: task.sourcePrompt,
@@ -911,8 +997,15 @@ function finalizeBenchmarkRun(task: ActiveTask, finalResponse: string): void {
     githubMcpTools: settings.github_mcp_tools || '',
     containerImage: CONTAINER_IMAGE,
     copilotAuthSource: source,
+    skillImprovementNote: task.skillImprovementNote || '',
+    skillSnapshotHash: task.skillSnapshot?.sha256 || '',
+    skillSnapshotFileCount: task.skillSnapshot?.fileCount || 0,
+    skillSnapshotCapturedAt: task.skillSnapshot?.capturedAt || '',
   };
   writeBenchmarkRunManifest(task.experimentId, task.benchmarkRunId, manifest);
+  if (task.skillSnapshot) {
+    writeBenchmarkSkillSnapshot(task.experimentId, task.benchmarkRunId, task.skillSnapshot);
+  }
 
   const artifactCheck = buildBenchmarkArtifactCheck(
     task.benchmarkRunId,
@@ -1112,6 +1205,20 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     if (!getExperiment(expId)) { sendJson(res, 404, { error: 'Not found' }); return; }
     const runs = listBenchmarkRuns(expId);
     sendJson(res, 200, { runs });
+    return;
+  }
+
+  // GET /api/benchmarks
+  if (method === 'GET' && pathname === '/api/benchmarks') {
+    const benchmarks = loadBenchmarkDefinitions().map((definition) => ({
+      id: definition.id,
+      label: definition.label,
+      title: definition.title,
+      promptSource: definition.promptSource,
+      requiredArtifacts: definition.requiredArtifacts,
+      promptText: definition.promptText,
+    }));
+    sendJson(res, 200, { benchmarks });
     return;
   }
 
@@ -1947,14 +2054,53 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
         _statusHistory: [],
       };
       const benchmark = matchBenchmarkDefinition(data.content);
+      const requestedSkillImprovement = data.skillImprovement && data.skillImprovement.enabled
+        ? {
+            benchmarkId: String(data.skillImprovement.benchmarkId || '').trim(),
+            note: String(data.skillImprovement.note || '').trim(),
+          }
+        : null;
+      let benchmarkContext: ReturnType<typeof createBenchmarkRunContext> | null = null;
+
       if (benchmark) {
-        const manifest = createBenchmarkRunManifest(data.experimentId, taskId, data.content, task.startedAt);
-        if (manifest) {
-          task.benchmarkRunId = manifest.runId;
-          task.benchmarkLabel = manifest.promptLabel;
-          task.benchmarkPromptSource = manifest.promptSource;
-          task.benchmarkRequiredArtifacts = benchmark.requiredArtifacts;
-          writeBenchmarkRunManifest(data.experimentId, manifest.runId, manifest);
+        benchmarkContext = createBenchmarkRunContext(
+          data.experimentId,
+          taskId,
+          data.content,
+          task.startedAt,
+          benchmark,
+          { mode: 'canonical' },
+        );
+      } else if (requestedSkillImprovement?.benchmarkId) {
+        const targetBenchmark = getBenchmarkDefinitionById(requestedSkillImprovement.benchmarkId);
+        if (targetBenchmark) {
+          benchmarkContext = createBenchmarkRunContext(
+            data.experimentId,
+            taskId,
+            data.content,
+            task.startedAt,
+            targetBenchmark,
+            {
+              mode: 'skill-improvement',
+              skillImprovementNote: requestedSkillImprovement.note,
+            },
+          );
+        }
+      }
+
+      if (benchmarkContext) {
+        task.benchmarkRunId = benchmarkContext.manifest.runId;
+        task.benchmarkMode = benchmarkContext.manifest.mode;
+        task.benchmarkDefinitionId = benchmarkContext.manifest.benchmarkDefinitionId;
+        task.benchmarkDefinitionTitle = benchmarkContext.manifest.benchmarkDefinitionTitle;
+        task.benchmarkLabel = benchmarkContext.manifest.promptLabel;
+        task.benchmarkPromptSource = benchmarkContext.manifest.promptSource;
+        task.benchmarkRequiredArtifacts = benchmarkContext.requiredArtifacts;
+        task.skillImprovementNote = benchmarkContext.manifest.skillImprovementNote;
+        task.skillSnapshot = benchmarkContext.skillSnapshot;
+        writeBenchmarkRunManifest(data.experimentId, benchmarkContext.manifest.runId, benchmarkContext.manifest);
+        if (benchmarkContext.skillSnapshot) {
+          writeBenchmarkSkillSnapshot(data.experimentId, benchmarkContext.manifest.runId, benchmarkContext.skillSnapshot);
         }
       }
       activeTasks.set(taskId, task);

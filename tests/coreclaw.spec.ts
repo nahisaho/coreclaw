@@ -1646,6 +1646,172 @@ test.describe('Chat Flow', () => {
       await expect(page.locator('#asp-step-' + taskId)).toContainText('Step 2/3');
       await expect(page.locator('#asp-tools-' + taskId)).toContainText('OpenAlex_search_papers');
     });
+
+    test('benchmark selector loads canonical prompt and sends skill improvement metadata', async ({ page }) => {
+      await page.addInitScript(() => {
+        class MockWebSocket {
+          static OPEN = 1;
+          static CLOSED = 3;
+
+          constructor(url) {
+            this.url = url;
+            this.readyState = MockWebSocket.OPEN;
+            this.sent = [];
+            this.onopen = null;
+            this.onmessage = null;
+            this.onerror = null;
+            this.onclose = null;
+            window.__mockSockets = window.__mockSockets || [];
+            window.__mockSockets.push(this);
+            setTimeout(() => {
+              if (this.onopen) this.onopen();
+            }, 0);
+          }
+
+          send(payload) {
+            this.sent.push(payload);
+          }
+
+          close() {
+            this.readyState = MockWebSocket.CLOSED;
+            if (this.onclose) this.onclose();
+          }
+        }
+
+        window.__mockSockets = [];
+        window.WebSocket = MockWebSocket;
+      });
+
+      await page.route('**/api/benchmarks', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            benchmarks: [{
+              id: 'benchmark-prompt-1',
+              label: 'prompt-1-test',
+              title: 'Benchmark Prompt 1',
+              promptSource: 'tests/benchmark-prompts.json',
+              requiredArtifacts: ['report.md'],
+              promptText: 'Canonical benchmark prompt body',
+            }],
+          }),
+        });
+      });
+
+      await page.goto('/');
+
+      await createExperiment(page, 'Benchmark Improvement UI Test');
+
+      await page.locator('#benchmarkPromptBtn').click();
+      await page.locator('.benchmark-selector-card').click();
+      await page.locator('#benchmarkPromptSelectorModal .btn-primary').click();
+
+      await expect(page.locator('#chatInput')).toHaveValue('Canonical benchmark prompt body');
+      await expect(page.locator('#selectedBenchmarkPromptBadge')).toContainText('Benchmark Prompt 1');
+
+      await page.locator('#recordSkillImprovement').check();
+      await page.selectOption('#skillImprovementBenchmarkSelect', 'benchmark-prompt-1');
+      await page.fill('#skillImprovementNote', 'Adjusted tool ordering');
+      await page.locator('#sendBtn').click();
+
+      const sentMessages = await page.evaluate(() => {
+        const socket = window.__mockSockets[0];
+        return socket ? socket.sent.map((raw) => JSON.parse(raw)) : [];
+      });
+      const chatMessage = sentMessages.findLast((message) => message.type === 'chat');
+      expect(chatMessage.content).toBe('Canonical benchmark prompt body');
+      expect(chatMessage.skillImprovement).toEqual({
+        enabled: true,
+        benchmarkId: 'benchmark-prompt-1',
+        note: 'Adjusted tool ordering',
+      });
+    });
+
+    test('benchmark results show skill snapshot diff against previous run', async ({ page }) => {
+      await page.goto('/');
+
+      await createExperiment(page, 'Benchmark Skill Diff Test');
+
+      await page.route('**/api/experiments/*/benchmark-runs', async (route) => {
+        const expId = route.request().url().match(/\/api\/experiments\/([^/]+)\/benchmark-runs/)?.[1] || '';
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            runs: [
+              {
+                manifest: {
+                  runId: 'run-new',
+                  experimentId: expId,
+                  taskId: 'task-new',
+                  mode: 'skill-improvement',
+                  benchmarkDefinitionId: 'benchmark-prompt-1',
+                  promptSource: 'tests/benchmark-prompts.json',
+                  promptLabel: 'prompt-1-test',
+                  promptText: 'Prompt body',
+                  startedAt: '2026-03-29T12:00:00.000Z',
+                  finishedAt: '2026-03-29T12:02:00.000Z',
+                  status: 'done',
+                  skill: 'scientist',
+                  skillSnapshotHash: 'abcdef1234567890',
+                },
+                artifactCheck: null,
+                evaluation: { result: 'pass', summary: 'Run completed', reasons: [], scores: { artifactCoverage: 1, finalResponsePresent: 1, taskEndedWithoutError: 1 } },
+                skillSnapshot: {
+                  runId: 'run-new',
+                  skillName: 'scientist',
+                  capturedAt: '2026-03-29T12:00:00.000Z',
+                  sha256: 'abcdef1234567890',
+                  fileCount: 2,
+                  files: [
+                    { path: 'SKILL.md', sizeBytes: 20, sha256: 'hash-new-skill', content: 'new skill body' },
+                    { path: 'notes.md', sizeBytes: 10, sha256: 'hash-notes', content: 'notes' },
+                  ],
+                },
+              },
+              {
+                manifest: {
+                  runId: 'run-old',
+                  experimentId: expId,
+                  taskId: 'task-old',
+                  mode: 'skill-improvement',
+                  benchmarkDefinitionId: 'benchmark-prompt-1',
+                  promptSource: 'tests/benchmark-prompts.json',
+                  promptLabel: 'prompt-1-test',
+                  promptText: 'Prompt body',
+                  startedAt: '2026-03-28T12:00:00.000Z',
+                  finishedAt: '2026-03-28T12:02:00.000Z',
+                  status: 'done',
+                  skill: 'scientist',
+                  skillSnapshotHash: '1234567890abcdef',
+                },
+                artifactCheck: null,
+                evaluation: { result: 'pass', summary: 'Previous run completed', reasons: [], scores: { artifactCoverage: 1, finalResponsePresent: 1, taskEndedWithoutError: 1 } },
+                skillSnapshot: {
+                  runId: 'run-old',
+                  skillName: 'scientist',
+                  capturedAt: '2026-03-28T12:00:00.000Z',
+                  sha256: '1234567890abcdef',
+                  fileCount: 1,
+                  files: [
+                    { path: 'SKILL.md', sizeBytes: 16, sha256: 'hash-old-skill', content: 'old skill body' },
+                  ],
+                },
+              },
+            ],
+          }),
+        });
+      });
+
+      await page.locator('button:has-text("Benchmarks")').click();
+
+      await expect(page.locator('#benchmarkRunsModal')).toHaveClass(/visible/);
+      await expect(page.locator('#benchmarkRunsList')).toContainText('Skill Revision Diff');
+      await expect(page.locator('#benchmarkRunsList')).toContainText('Skill diff vs previous run: +1 / ~1 / -0');
+      await expect(page.locator('#benchmarkRunsList')).toContainText('+ notes.md');
+      await expect(page.locator('#benchmarkRunsList')).toContainText('~ SKILL.md');
+    });
   });
 });
 
@@ -1693,6 +1859,15 @@ test.describe('REST API', () => {
     expect(createdSkill).toHaveProperty('version');
 
     await request.delete(`/api/skills/${skillName}`);
+  });
+
+  test('GET /api/benchmarks returns benchmark definitions', async ({ request }) => {
+    const res = await request.get('/api/benchmarks');
+    expect(res.ok()).toBeTruthy();
+    const body = await res.json();
+    expect(Array.isArray(body.benchmarks)).toBeTruthy();
+    expect(body.benchmarks[0]).toHaveProperty('id');
+    expect(body.benchmarks[0]).toHaveProperty('promptText');
   });
 
   test('GET /api/skills prefers marketplace import version for imported skills', async ({ request }) => {

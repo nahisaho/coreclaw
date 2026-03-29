@@ -1431,6 +1431,66 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   justify-content: center; transition: all .15s; flex-shrink: 0;
 }
 .btn-upload:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--text-muted); }
+.btn-benchmark {
+  background: var(--bg-tertiary); border: 1px solid var(--border);
+  color: var(--text-secondary); width: 44px; height: 44px; border-radius: var(--radius);
+  cursor: pointer; font-size: 18px; display: flex; align-items: center;
+  justify-content: center; transition: all .15s; flex-shrink: 0;
+}
+.btn-benchmark:hover { background: var(--bg-hover); color: var(--text-primary); border-color: var(--text-muted); }
+.input-benchmark-row {
+  max-width: var(--chat-content-w); margin: 10px auto 0; display: flex; gap: 10px;
+  align-items: center; flex-wrap: wrap; color: var(--text-secondary); font-size: 12px;
+}
+.input-benchmark-row label { display: inline-flex; align-items: center; gap: 6px; cursor: pointer; }
+.input-benchmark-row select,
+.input-benchmark-row input[type="text"] {
+  background: var(--bg-tertiary); border: 1px solid var(--border); border-radius: 8px;
+  color: var(--text-primary); font-size: 12px; padding: 7px 10px;
+}
+.input-benchmark-row select:disabled,
+.input-benchmark-row input[type="text"]:disabled {
+  opacity: .55; cursor: not-allowed;
+}
+.input-benchmark-pill {
+  display: inline-flex; align-items: center; gap: 6px; padding: 6px 10px; border-radius: 999px;
+  border: 1px solid var(--border); background: var(--bg-tertiary); color: var(--text-secondary);
+}
+.benchmark-selector-list { max-height: 52vh; overflow-y: auto; display: flex; flex-direction: column; gap: 8px; }
+.benchmark-selector-card {
+  border: 1px solid var(--border); border-radius: 10px; padding: 12px; background: var(--bg-tertiary);
+  cursor: pointer; transition: border-color .15s, background .15s;
+}
+.benchmark-selector-card:hover { border-color: var(--accent); background: var(--bg-hover); }
+.benchmark-selector-card.active { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent) inset; }
+.benchmark-selector-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.benchmark-selector-meta { font-size: 11px; color: var(--text-muted); margin-top: 4px; }
+.benchmark-selector-note { font-size: 12px; color: var(--text-secondary); margin-top: 8px; }
+.benchmark-run-mode {
+  display: inline-flex; align-items: center; gap: 4px; font-size: 10px; padding: 2px 8px;
+  border-radius: 999px; border: 1px solid var(--border); text-transform: uppercase; letter-spacing: .03em;
+  color: var(--text-secondary);
+}
+.benchmark-run-mode.skill-improvement { color: var(--orange); border-color: var(--orange); }
+.benchmark-run-mode.canonical { color: var(--accent); border-color: var(--accent); }
+.benchmark-run-diff {
+  margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid var(--border); background: var(--bg-secondary);
+}
+.benchmark-run-diff-title {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 6px;
+}
+.benchmark-run-diff-summary {
+  font-size: 12px; color: var(--text-primary); margin-bottom: 6px;
+}
+.benchmark-run-diff-files {
+  display: flex; flex-wrap: wrap; gap: 6px;
+}
+.benchmark-run-diff-files span {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
+  background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-secondary); font-size: 11px;
+}
 
 /* Upload preview chips */
 .upload-preview { padding: 0 4px; display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1628,9 +1688,18 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
         <input type="file" id="fileInput" multiple style="display:none" onchange="handleFileSelect(event)">
         <textarea id="chatInput" rows="1" placeholder="Ask about your experiment... (Ctrl+Enter to send)"
                   onkeydown="handleInputKey(event)" oninput="autoResize(this)"></textarea>
+        <button class="btn-benchmark" id="benchmarkPromptBtn" onclick="showBenchmarkPromptSelectorModal()" title="Insert benchmark prompt">📊</button>
         <button class="btn-mic" id="micBtn" onclick="toggleSpeech()" title="Speech to text">🎤</button>
         <button class="btn-send" id="sendBtn" onclick="sendMessage()">➤</button>
       </div>
+        <div class="input-benchmark-row">
+          <label><input type="checkbox" id="recordSkillImprovement" onchange="toggleSkillImprovementControls(this.checked)"> Record Skill Improvement</label>
+          <select id="skillImprovementBenchmarkSelect" disabled>
+            <option value="">Select target benchmark...</option>
+          </select>
+          <input type="text" id="skillImprovementNote" placeholder="What changed in this skill revision?" disabled>
+          <span class="input-benchmark-pill" id="selectedBenchmarkPromptBadge">No benchmark prompt loaded</span>
+        </div>
     </div>
   </main>
 </div>
@@ -2049,6 +2118,21 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   </div>
 </div>
 
+<div class="modal-overlay" id="benchmarkPromptSelectorModal" onclick="if(event.target===this)closeModal('benchmarkPromptSelectorModal')">
+  <div class="modal benchmark-runs-modal">
+    <div class="modal-header">
+      <h3>📊 Benchmark Prompt Selector</h3>
+      <button class="modal-close" onclick="closeModal('benchmarkPromptSelectorModal')" title="Close">✕</button>
+    </div>
+    <div class="benchmark-runs-summary">Load a canonical benchmark prompt without modifying its text.</div>
+    <div class="benchmark-selector-list" id="benchmarkPromptSelectorList"></div>
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal('benchmarkPromptSelectorModal')">Cancel</button>
+      <button class="btn-primary" onclick="applySelectedBenchmarkPrompt()">Load Prompt</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ===== State =====
 let experiments = [];
@@ -2060,9 +2144,11 @@ let persistedProcessHistory = [];
 let persistedActivityEvents = [];
 let liveActivityEvents = [];
 let cachedBenchmarkRuns = [];
+let cachedBenchmarkDefinitions = [];
 let currentMemory = null;   // current memory state for the active experiment
 let pendingTaskContexts = [];
 let currentOutputLanguage = 'ja';
+let selectedBenchmarkPromptId = '';
 let copilotAuthStatus = {
   ok: false,
   state: 'checking',
@@ -2629,6 +2715,98 @@ async function loadBenchmarkRuns() {
     cachedBenchmarkRuns = [];
   }
   return cachedBenchmarkRuns;
+}
+
+async function loadBenchmarkDefinitions() {
+  if (cachedBenchmarkDefinitions.length) return cachedBenchmarkDefinitions;
+  try {
+    const data = await api('/benchmarks');
+    cachedBenchmarkDefinitions = Array.isArray(data.benchmarks) ? data.benchmarks : [];
+  } catch (err) {
+    console.error('loadBenchmarkDefinitions failed:', err);
+    cachedBenchmarkDefinitions = [];
+  }
+  syncSkillImprovementBenchmarkOptions();
+  return cachedBenchmarkDefinitions;
+}
+
+function syncSkillImprovementBenchmarkOptions() {
+  const select = document.getElementById('skillImprovementBenchmarkSelect');
+  if (!select) return;
+
+  const previousValue = select.value;
+  const options = ['<option value="">Select target benchmark...</option>']
+    .concat(cachedBenchmarkDefinitions.map((benchmark) => `<option value="${esc(benchmark.id)}">${esc(benchmark.title)}</option>`));
+  select.innerHTML = options.join('');
+  if (previousValue && cachedBenchmarkDefinitions.some((benchmark) => benchmark.id === previousValue)) {
+    select.value = previousValue;
+  }
+}
+
+function toggleSkillImprovementControls(enabled) {
+  const select = document.getElementById('skillImprovementBenchmarkSelect');
+  const note = document.getElementById('skillImprovementNote');
+  if (select) select.disabled = !enabled;
+  if (note) note.disabled = !enabled;
+  if (enabled && !cachedBenchmarkDefinitions.length) {
+    loadBenchmarkDefinitions();
+  }
+}
+
+function updateSelectedBenchmarkPromptBadge() {
+  const badge = document.getElementById('selectedBenchmarkPromptBadge');
+  if (!badge) return;
+  const selected = cachedBenchmarkDefinitions.find((benchmark) => benchmark.id === selectedBenchmarkPromptId);
+  badge.textContent = selected ? `Prompt loaded: ${selected.title}` : 'No benchmark prompt loaded';
+}
+
+function renderBenchmarkPromptSelectorModal() {
+  const list = document.getElementById('benchmarkPromptSelectorList');
+  if (!list) return;
+  if (!cachedBenchmarkDefinitions.length) {
+    list.innerHTML = '<div class="benchmark-run-empty">No benchmark definitions found.</div>';
+    return;
+  }
+
+  list.innerHTML = cachedBenchmarkDefinitions.map((benchmark) => {
+    const isActive = benchmark.id === selectedBenchmarkPromptId;
+    return `<div class="benchmark-selector-card ${isActive ? 'active' : ''}" onclick="selectBenchmarkPrompt('${esc(benchmark.id)}')">
+      <div class="benchmark-selector-title">${esc(benchmark.title)}</div>
+      <div class="benchmark-selector-meta">${esc(benchmark.id)} • ${esc(benchmark.promptSource || 'unknown source')}</div>
+      <div class="benchmark-selector-note">Required artifacts: ${esc(String((benchmark.requiredArtifacts || []).length))}</div>
+    </div>`;
+  }).join('');
+}
+
+function selectBenchmarkPrompt(benchmarkId) {
+  selectedBenchmarkPromptId = benchmarkId;
+  renderBenchmarkPromptSelectorModal();
+}
+
+async function showBenchmarkPromptSelectorModal() {
+  await loadBenchmarkDefinitions();
+  renderBenchmarkPromptSelectorModal();
+  document.getElementById('benchmarkPromptSelectorModal').classList.add('visible');
+}
+
+function applySelectedBenchmarkPrompt() {
+  const benchmark = cachedBenchmarkDefinitions.find((entry) => entry.id === selectedBenchmarkPromptId);
+  if (!benchmark) return;
+
+  const input = document.getElementById('chatInput');
+  if (!input) return;
+  if (input.value.trim() && !confirm('Replace the current prompt with the selected benchmark prompt?')) {
+    return;
+  }
+
+  input.value = benchmark.promptText || '';
+  const benchmarkSelect = document.getElementById('skillImprovementBenchmarkSelect');
+  if (benchmarkSelect && cachedBenchmarkDefinitions.some((entry) => entry.id === benchmark.id)) {
+    benchmarkSelect.value = benchmark.id;
+  }
+  autoResize(input);
+  updateSelectedBenchmarkPromptBadge();
+  closeModal('benchmarkPromptSelectorModal');
 }
 
 // ===== Experiments =====
@@ -3628,6 +3806,77 @@ function formatBenchmarkCoverage(value) {
   return `${Math.round(numeric * 100)}%`;
 }
 
+function buildBenchmarkSkillDiff(currentSnapshot, previousSnapshot) {
+  if (!currentSnapshot || !Array.isArray(currentSnapshot.files)) return null;
+  if (!previousSnapshot || !Array.isArray(previousSnapshot.files)) {
+    return {
+      summary: 'Baseline snapshot for this skill',
+      files: currentSnapshot.files.slice(0, 6).map(file => `base:${file.path}`),
+    };
+  }
+
+  const currentFiles = new Map(currentSnapshot.files.map((file) => [file.path, file]));
+  const previousFiles = new Map(previousSnapshot.files.map((file) => [file.path, file]));
+  const added = [];
+  const removed = [];
+  const changed = [];
+
+  for (const [filePath, file] of currentFiles) {
+    const previousFile = previousFiles.get(filePath);
+    if (!previousFile) {
+      added.push(filePath);
+      continue;
+    }
+    if (previousFile.sha256 !== file.sha256) {
+      changed.push(filePath);
+    }
+  }
+
+  for (const [filePath] of previousFiles) {
+    if (!currentFiles.has(filePath)) {
+      removed.push(filePath);
+    }
+  }
+
+  if (!added.length && !removed.length && !changed.length) {
+    return {
+      summary: 'No skill file changes compared with the previous run',
+      files: [],
+    };
+  }
+
+  return {
+    summary: `Skill diff vs previous run: +${added.length} / ~${changed.length} / -${removed.length}`,
+    files: [
+      ...added.map((filePath) => `+ ${filePath}`),
+      ...changed.map((filePath) => `~ ${filePath}`),
+      ...removed.map((filePath) => `- ${filePath}`),
+    ].slice(0, 10),
+  };
+}
+
+function findPreviousComparableBenchmarkRun(runs, currentIndex) {
+  const currentRun = runs[currentIndex];
+  const currentManifest = currentRun?.manifest || {};
+  if (!currentManifest.skill) return null;
+
+  for (let index = currentIndex + 1; index < runs.length; index += 1) {
+    const candidate = runs[index];
+    const candidateManifest = candidate?.manifest || {};
+    if (candidateManifest.skill !== currentManifest.skill) continue;
+    if (
+      currentManifest.benchmarkDefinitionId
+      && candidateManifest.benchmarkDefinitionId
+      && candidateManifest.benchmarkDefinitionId !== currentManifest.benchmarkDefinitionId
+    ) {
+      continue;
+    }
+    return candidate;
+  }
+
+  return null;
+}
+
 function renderBenchmarkRunsModal() {
   const summary = document.getElementById('benchmarkRunsSummary');
   const list = document.getElementById('benchmarkRunsList');
@@ -3636,9 +3885,10 @@ function renderBenchmarkRunsModal() {
   const runs = Array.isArray(cachedBenchmarkRuns) ? cachedBenchmarkRuns : [];
   const passCount = runs.filter((run) => run.evaluation?.result === 'pass').length;
   const failCount = runs.filter((run) => run.evaluation?.result === 'fail').length;
+  const skillImprovementCount = runs.filter((run) => run.manifest?.mode === 'skill-improvement').length;
 
   summary.textContent = runs.length
-    ? `${runs.length} 件の benchmark run • PASS ${passCount} / FAIL ${failCount}`
+    ? `${runs.length} 件の benchmark run • PASS ${passCount} / FAIL ${failCount} • Skill improvement ${skillImprovementCount}`
     : 'まだ benchmark run はありません。';
 
   if (!runs.length) {
@@ -3646,30 +3896,44 @@ function renderBenchmarkRunsModal() {
     return;
   }
 
-  list.innerHTML = runs.map((run) => {
+  list.innerHTML = runs.map((run, index) => {
     const manifest = run.manifest || {};
     const evaluation = run.evaluation || null;
     const artifactCheck = run.artifactCheck || null;
+    const skillSnapshot = run.skillSnapshot || null;
+    const previousComparableRun = findPreviousComparableBenchmarkRun(runs, index);
+    const skillDiff = buildBenchmarkSkillDiff(skillSnapshot, previousComparableRun?.skillSnapshot || null);
     const finishedAt = manifest.finishedAt || manifest.startedAt;
     const missingReasons = Array.isArray(evaluation?.reasons) && evaluation.reasons.length
       ? evaluation.reasons.join(', ')
       : '';
     const checks = Array.isArray(artifactCheck?.checks) ? artifactCheck.checks : [];
     const meta = [
+      manifest.mode ? `${manifest.mode}` : '',
+      manifest.benchmarkDefinitionId ? `benchmark ${manifest.benchmarkDefinitionId}` : '',
       manifest.taskId ? `task ${manifest.taskId}` : '',
       manifest.model ? `model ${manifest.model}` : '',
       manifest.skill ? `skill ${manifest.skill}` : '',
+      manifest.skillSnapshotHash ? `skill sha ${manifest.skillSnapshotHash.slice(0, 12)}` : '',
+      skillSnapshot ? `skill files ${skillSnapshot.fileCount}` : '',
       artifactCheck ? `artifact coverage ${formatBenchmarkCoverage(artifactCheck.artifactCoverage)}` : '',
     ].filter(Boolean);
     return `<div class="benchmark-run-card">
       <div class="benchmark-run-head">
         <span class="benchmark-run-badge ${esc(evaluation?.result || manifest.status || 'running')}">${esc(formatBenchmarkStatusLabel(evaluation?.result || manifest.status || 'running'))}</span>
+        <span class="benchmark-run-mode ${esc(manifest.mode || 'canonical')}">${esc((manifest.mode || 'canonical').replace('-', ' '))}</span>
         <span class="benchmark-run-title">${esc(manifest.promptLabel || 'benchmark')}</span>
         <span class="benchmark-run-time">${esc(finishedAt ? new Date(finishedAt).toLocaleString('ja-JP') : '—')}</span>
       </div>
       <div class="benchmark-run-source">source: ${esc(manifest.promptSource || 'unknown')}</div>
       <div class="benchmark-run-summary">${esc(evaluation?.summary || '評価結果はまだありません。')}</div>
+      ${manifest.skillImprovementNote ? `<div class="benchmark-run-summary">skill note: ${esc(manifest.skillImprovementNote)}</div>` : ''}
       ${meta.length ? `<div class="benchmark-run-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join('')}</div>` : ''}
+      ${skillDiff ? `<div class="benchmark-run-diff">
+        <div class="benchmark-run-diff-title">Skill Revision Diff</div>
+        <div class="benchmark-run-diff-summary">${esc(skillDiff.summary)}</div>
+        ${skillDiff.files.length ? `<div class="benchmark-run-diff-files">${skillDiff.files.map((item) => `<span>${esc(item)}</span>`).join('')}</div>` : ''}
+      </div>` : ''}
       ${checks.length ? `<div class="benchmark-run-artifacts">${checks.map((item) => `<div class="benchmark-run-artifact ${item.exists ? 'present' : 'missing'}"><span class="benchmark-run-artifact-path">${esc(item.path)}</span><span class="benchmark-run-artifact-status">${item.exists ? `あり • ${item.sizeBytes} B` : '欠落'}</span></div>`).join('')}</div>` : ''}
       ${missingReasons ? `<div class="benchmark-run-reasons">reasons: ${esc(missingReasons)}</div>` : ''}
     </div>`;
@@ -4111,10 +4375,21 @@ async function sendMessage() {
     prompt: content,
   });
 
+  const skillImprovementEnabled = document.getElementById('recordSkillImprovement')?.checked;
+  const skillImprovementBenchmarkId = document.getElementById('skillImprovementBenchmarkSelect')?.value || '';
+  const skillImprovementNote = document.getElementById('skillImprovementNote')?.value.trim() || '';
+
   ws.send(JSON.stringify({
     type: 'chat',
     experimentId: currentExpId,
     content,
+    skillImprovement: skillImprovementEnabled && skillImprovementBenchmarkId
+      ? {
+          enabled: true,
+          benchmarkId: skillImprovementBenchmarkId,
+          note: skillImprovementNote,
+        }
+      : undefined,
   }));
 
   input.value = '';

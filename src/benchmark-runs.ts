@@ -176,6 +176,22 @@ export function loadBenchmarkDefinitions(
   return [];
 }
 
+export function getBenchmarkDefinitionById(
+  benchmarkId: string,
+  definitions: BenchmarkDefinition[] = loadBenchmarkDefinitions(),
+): BenchmarkDefinition | null {
+  const normalizedId = String(benchmarkId || '').trim();
+  if (!normalizedId) return null;
+
+  for (const definition of definitions) {
+    if (definition.id === normalizedId || definition.label === normalizedId) {
+      return definition;
+    }
+  }
+
+  return null;
+}
+
 export function matchBenchmarkDefinition(
   promptText: string,
   definitions: BenchmarkDefinition[] = loadBenchmarkDefinitions(),
