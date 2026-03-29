@@ -475,8 +475,18 @@ export function getMessagesFromOffset(
 
 export function updateMessageContent(msgId: string, content: string): void {
   getDb()
-    .prepare('UPDATE experiment_messages SET content = ?, metadata = NULL WHERE id = ?')
-    .run(content, msgId);
+    .prepare('UPDATE experiment_messages SET content = ?, metadata = ? WHERE id = ?')
+    .run(content, null, msgId);
+}
+
+export function updateMessageContentWithMetadata(
+  msgId: string,
+  content: string,
+  metadata?: Record<string, unknown>,
+): void {
+  getDb()
+    .prepare('UPDATE experiment_messages SET content = ?, metadata = ? WHERE id = ?')
+    .run(content, metadata ? JSON.stringify(metadata) : null, msgId);
 }
 
 /**

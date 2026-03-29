@@ -15,12 +15,11 @@ test.describe('Page Load', () => {
     await expect(page.locator('.welcome h2')).toHaveText('🐾 CoreClaw');
   });
 
-  test('shows skill count in sidebar', async ({ page }) => {
+  test('does not show skill entry in sidebar', async ({ page }) => {
     await page.goto('/');
-    const skillCount = page.locator('#skillCount');
-    await expect(skillCount).toBeVisible();
-    // Should show a number >= 0 (local skills directory)
-    await expect(skillCount).toBeVisible();
+    await expect(page.locator('.sidebar-nav .sidebar-nav-item')).toHaveCount(2);
+    await expect(page.locator('#skillCount')).toHaveCount(0);
+    await expect(page.locator('#activeSkillBadge')).toHaveCount(0);
   });
 });
 
@@ -1730,11 +1729,12 @@ test.describe('Chat Flow', () => {
       await page.fill('#chatInput', 'Prompt body about to run');
 
       await page.locator('#benchmarkPromptBtn').click();
+      await expect(page.locator('#benchmarkPromptSelectorModal')).toContainText('This does not replace the prompt in the input box.');
       await page.locator('.benchmark-selector-card').click();
       await page.locator('#benchmarkPromptSelectorModal .btn-primary').click();
 
       await expect(page.locator('#chatInput')).toHaveValue('Prompt body about to run');
-      await expect(page.locator('#selectedBenchmarkPromptBadge')).toContainText('Benchmark target: Benchmark Prompt 1');
+      await expect(page.locator('#selectedBenchmarkPromptBadge')).toContainText('Next prompt benchmark target: Benchmark Prompt 1');
 
       await page.locator('#sendBtn').click();
 
@@ -1831,6 +1831,7 @@ test.describe('Chat Flow', () => {
       await page.goto('/');
 
       await createExperiment(page, 'Benchmark Skill Diff Test');
+      await page.evaluate(() => applyOutputLanguagePreference('en'));
 
       await page.route('**/api/experiments/*/benchmark-runs', async (route) => {
         const expId = route.request().url().match(/\/api\/experiments\/([^/]+)\/benchmark-runs/)?.[1] || '';
@@ -1846,6 +1847,7 @@ test.describe('Chat Flow', () => {
                   taskId: 'task-new',
                   mode: 'skill-improvement',
                   benchmarkDefinitionId: 'benchmark-prompt-1',
+                  benchmarkDefinitionTitle: 'Benchmark Prompt 1',
                   promptSource: 'tests/benchmark-prompts.json',
                   promptLabel: 'prompt-1-test',
                   promptText: 'Prompt body',
@@ -1853,6 +1855,7 @@ test.describe('Chat Flow', () => {
                   finishedAt: '2026-03-29T12:02:00.000Z',
                   status: 'done',
                   skill: 'scientist',
+                  skillImprovementNote: 'Added validation checklist',
                   skillSnapshotHash: 'abcdef1234567890',
                 },
                 artifactCheck: null,
@@ -1876,6 +1879,7 @@ test.describe('Chat Flow', () => {
                   taskId: 'task-old',
                   mode: 'skill-improvement',
                   benchmarkDefinitionId: 'benchmark-prompt-1',
+                  benchmarkDefinitionTitle: 'Benchmark Prompt 1',
                   promptSource: 'tests/benchmark-prompts.json',
                   promptLabel: 'prompt-1-test',
                   promptText: 'Prompt body',
@@ -1908,8 +1912,162 @@ test.describe('Chat Flow', () => {
       await expect(page.locator('#benchmarkRunsModal')).toHaveClass(/visible/);
       await expect(page.locator('#benchmarkRunsList')).toContainText('Skill Revision Diff');
       await expect(page.locator('#benchmarkRunsList')).toContainText('Skill diff vs previous run: +1 / ~1 / -0');
+      await expect(page.locator('#benchmarkRunsList')).toContainText('Skill Improvement Brief');
+      await expect(page.locator('#benchmarkRunsList')).toContainText('Evaluated the prompt that was actually sent from the input box');
+      await expect(page.locator('#benchmarkRunsList')).toContainText('Revision note: Added validation checklist');
+      await expect(page.locator('#benchmarkRunsList')).toContainText("Promote the successful procedure into scientist's reusable checklist or examples so the same behavior is repeatable.");
       await expect(page.locator('#benchmarkRunsList')).toContainText('+ notes.md');
       await expect(page.locator('#benchmarkRunsList')).toContainText('~ SKILL.md');
+    });
+
+    test('benchmark results localize skill improvement suggestions in Japanese', async ({ page }) => {
+      await page.goto('/');
+
+      await createExperiment(page, 'Benchmark Skill Diff JA Test');
+      await page.evaluate(() => applyOutputLanguagePreference('ja'));
+
+      await page.route('**/api/experiments/*/benchmark-runs', async (route) => {
+        const expId = route.request().url().match(/\/api\/experiments\/([^/]+)\/benchmark-runs/)?.[1] || '';
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            runs: [
+              {
+                manifest: {
+                  runId: 'run-new-ja',
+                  experimentId: expId,
+                  taskId: 'task-new-ja',
+                  mode: 'skill-improvement',
+                  benchmarkDefinitionId: 'benchmark-prompt-1',
+                  benchmarkDefinitionTitle: 'Benchmark Prompt 1',
+                  promptSource: 'tests/benchmark-prompts.json',
+                  promptLabel: 'prompt-1-test',
+                  promptText: 'Prompt body',
+                  startedAt: '2026-03-29T12:00:00.000Z',
+                  finishedAt: '2026-03-29T12:02:00.000Z',
+                  status: 'done',
+                  skill: 'scientist',
+                  skillImprovementNote: 'Added validation checklist',
+                  skillSnapshotHash: 'abcdef1234567890',
+                },
+                artifactCheck: null,
+                evaluation: { result: 'pass', summary: 'Run completed', reasons: [], scores: { artifactCoverage: 1, finalResponsePresent: 1, taskEndedWithoutError: 1 } },
+                skillSnapshot: {
+                  runId: 'run-new-ja',
+                  skillName: 'scientist',
+                  capturedAt: '2026-03-29T12:00:00.000Z',
+                  sha256: 'abcdef1234567890',
+                  fileCount: 2,
+                  files: [
+                    { path: 'SKILL.md', sizeBytes: 20, sha256: 'hash-new-skill', content: 'new skill body' },
+                    { path: 'notes.md', sizeBytes: 10, sha256: 'hash-notes', content: 'notes' },
+                  ],
+                },
+              },
+              {
+                manifest: {
+                  runId: 'run-old-ja',
+                  experimentId: expId,
+                  taskId: 'task-old-ja',
+                  mode: 'skill-improvement',
+                  benchmarkDefinitionId: 'benchmark-prompt-1',
+                  benchmarkDefinitionTitle: 'Benchmark Prompt 1',
+                  promptSource: 'tests/benchmark-prompts.json',
+                  promptLabel: 'prompt-1-test',
+                  promptText: 'Prompt body',
+                  startedAt: '2026-03-28T12:00:00.000Z',
+                  finishedAt: '2026-03-28T12:02:00.000Z',
+                  status: 'done',
+                  skill: 'scientist',
+                  skillSnapshotHash: '1234567890abcdef',
+                },
+                artifactCheck: null,
+                evaluation: { result: 'pass', summary: 'Previous run completed', reasons: [], scores: { artifactCoverage: 1, finalResponsePresent: 1, taskEndedWithoutError: 1 } },
+                skillSnapshot: {
+                  runId: 'run-old-ja',
+                  skillName: 'scientist',
+                  capturedAt: '2026-03-28T12:00:00.000Z',
+                  sha256: '1234567890abcdef',
+                  fileCount: 1,
+                  files: [
+                    { path: 'SKILL.md', sizeBytes: 16, sha256: 'hash-old-skill', content: 'old skill body' },
+                  ],
+                },
+              },
+            ],
+          }),
+        });
+      });
+
+      await page.locator('button:has-text("Benchmarks")').click();
+
+      await expect(page.locator('#benchmarkRunsList')).toContainText('Skill 改善ブリーフ');
+      await expect(page.locator('#benchmarkRunsList')).toContainText('入力欄から実際に送信したプロンプトを評価しました');
+      await expect(page.locator('#benchmarkRunsList')).toContainText('改訂メモ: Added validation checklist');
+      await expect(page.locator('#benchmarkRunsList')).toContainText('成功した手順を scientist の再利用可能なチェックリストや例に昇格させ');
+    });
+
+    test('assistant reply shows localized skill improvement brief immediately after execution', async ({ page }) => {
+      await page.goto('/');
+
+      await createExperiment(page, 'Assistant Benchmark Insight Test');
+      await page.evaluate(() => applyOutputLanguagePreference('en'));
+
+      const experimentId = await page.evaluate(() => currentExpId);
+      const taskId = 'assistant-benchmark-insight-task';
+      const assistantMessage = {
+        id: 'assistant-benchmark-insight-msg',
+        experiment_id: experimentId,
+        role: 'assistant',
+        content: 'Final answer with benchmark follow-up.',
+        timestamp: new Date().toISOString(),
+        metadata: JSON.stringify({
+          benchmarkInsight: {
+            runId: 'run-assistant-1',
+            manifest: {
+              mode: 'skill-improvement',
+              benchmarkDefinitionId: 'benchmark-prompt-1',
+              benchmarkDefinitionTitle: 'Benchmark Prompt 1',
+              promptLabel: 'prompt-1-test',
+              promptText: 'Prompt body about to run',
+              skill: 'scientist',
+              skillImprovementNote: 'Added validation checklist',
+            },
+            evaluation: {
+              result: 'pass',
+              summary: 'Run completed',
+            },
+            artifactCheck: {
+              checks: [{ path: 'report.md', exists: true, sizeBytes: 128 }],
+              artifactCoverage: 1,
+              allRequiredPresent: true,
+            },
+            skillDiff: {
+              summary: 'Skill diff vs previous run: +1 / ~1 / -0',
+              files: ['+ notes.md', '~ SKILL.md'],
+              added: ['notes.md'],
+              changed: ['SKILL.md'],
+              removed: [],
+              isBaseline: false,
+            },
+            previousComparableSnapshotUnchanged: false,
+          },
+        }),
+      };
+
+      await page.evaluate(([expId, id, message]) => {
+        const emit = (payload) => ws.onmessage({ data: JSON.stringify(payload) });
+        emit({ experimentId: expId, type: 'agent_start', taskId: id });
+        emit({ experimentId: expId, type: 'agent_done', taskId: id, message });
+      }, [experimentId, taskId, assistantMessage]);
+
+      const assistantCard = page.locator('.message.assistant').last();
+      await expect(assistantCard).toContainText('Final answer with benchmark follow-up.');
+      await expect(assistantCard).toContainText('Skill Improvement Brief');
+      await expect(assistantCard).toContainText('Evaluated the prompt that was actually sent from the input box');
+      await expect(assistantCard).toContainText('Revision note: Added validation checklist');
+      await expect(assistantCard).toContainText("Promote the successful procedure into scientist's reusable checklist or examples so the same behavior is repeatable.");
     });
   });
 });

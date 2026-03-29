@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.58] - 2026-03-29
+
+### Changed
+
+- **Benchmark skill improvement localization**: Benchmark Results と実行直後の assistant 返信に表示される Skill 改善ブリーフを、出力言語設定に応じて日本語または英語で表示するようにしました。
+- **Assistant benchmark feedback**: benchmark 実行後は、Benchmark Results だけでなく assistant 返信にも Skill 改善の情報と改善案を表示するようにしました。
+
 ## [0.1.57] - 2026-03-29
 
 ### Changed

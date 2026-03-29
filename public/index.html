@@ -1491,6 +1491,31 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 999px;
   background: var(--bg-tertiary); border: 1px solid var(--border); color: var(--text-secondary); font-size: 11px;
 }
+.benchmark-run-insight {
+  margin-top: 10px; padding: 10px 12px; border-radius: 10px;
+  border: 1px solid rgba(59, 130, 246, 0.22); background: rgba(59, 130, 246, 0.06);
+}
+.benchmark-run-insight-title {
+  font-size: 11px; font-weight: 600; letter-spacing: .04em; text-transform: uppercase;
+  color: var(--text-muted); margin-bottom: 8px;
+}
+.benchmark-run-insight-facts,
+.benchmark-run-insight-suggestions {
+  display: flex; flex-direction: column; gap: 6px;
+}
+.benchmark-run-insight-fact,
+.benchmark-run-insight-suggestion {
+  font-size: 12px; color: var(--text-primary); line-height: 1.5;
+}
+.benchmark-run-insight-suggestions {
+  margin-top: 10px;
+}
+.benchmark-run-insight-suggestion::before {
+  content: '→ '; color: var(--accent); font-weight: 600;
+}
+.assistant-benchmark-insight {
+  margin-top: 12px;
+}
 
 /* Upload preview chips */
 .upload-preview { padding: 0 4px; display: flex; flex-wrap: wrap; gap: 4px; }
@@ -1586,9 +1611,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
         <button class="sidebar-nav-item" onclick="showSearchPopup()">
           <span class="nav-icon">🔍</span> Search
         </button>
-        <button class="sidebar-nav-item" onclick="showSkillSelector()">
-          <span class="nav-icon">🧩</span> Skill <span class="sidebar-skill-badge" id="activeSkillBadge"></span>
-        </button>
       </nav>
     </div>
     <div class="sidebar-search">
@@ -1597,7 +1619,6 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
     <div class="experiment-list" id="experimentList"></div>
     <div class="sidebar-footer">
       <div class="sidebar-footer-top">
-        <span><span id="skillCount">0</span> Agent Skills</span>
         <div class="sidebar-footer-actions">
           <button class="settings-btn" onclick="showSettings()" title="Settings">⚙️</button>
           <button class="stop-btn" id="stopServerBtn" onclick="stopWebServer()" title="Stop web server">🔴</button>
@@ -1688,17 +1709,17 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
         <input type="file" id="fileInput" multiple style="display:none" onchange="handleFileSelect(event)">
         <textarea id="chatInput" rows="1" placeholder="Ask about your experiment... (Ctrl+Enter to send)"
                   onkeydown="handleInputKey(event)" oninput="autoResize(this)"></textarea>
-        <button class="btn-benchmark" id="benchmarkPromptBtn" onclick="showBenchmarkPromptSelectorModal()" title="Select benchmark target">📊</button>
+        <button class="btn-benchmark" id="benchmarkPromptBtn" onclick="showBenchmarkPromptSelectorModal()" title="Benchmark the next prompt">📊</button>
         <button class="btn-mic" id="micBtn" onclick="toggleSpeech()" title="Speech to text">🎤</button>
         <button class="btn-send" id="sendBtn" onclick="sendMessage()">➤</button>
       </div>
         <div class="input-benchmark-row">
-          <label><input type="checkbox" id="recordSkillImprovement" onchange="toggleSkillImprovementControls(this.checked)"> Record Skill Improvement</label>
+          <label><input type="checkbox" id="recordSkillImprovement" onchange="toggleSkillImprovementControls(this.checked)"> Record Skill Improvement For Next Prompt</label>
           <select id="skillImprovementBenchmarkSelect" onchange="syncSelectedBenchmarkTarget(this.value)" disabled>
-            <option value="">Select target benchmark...</option>
+            <option value="">Choose benchmark target for next prompt...</option>
           </select>
           <input type="text" id="skillImprovementNote" placeholder="What changed in this skill revision?" disabled>
-          <span class="input-benchmark-pill" id="selectedBenchmarkPromptBadge">No benchmark target selected</span>
+          <span class="input-benchmark-pill" id="selectedBenchmarkPromptBadge">Next prompt is not linked to a benchmark target</span>
         </div>
     </div>
   </main>
@@ -2121,14 +2142,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 <div class="modal-overlay" id="benchmarkPromptSelectorModal" onclick="if(event.target===this)closeModal('benchmarkPromptSelectorModal')">
   <div class="modal benchmark-runs-modal">
     <div class="modal-header">
-      <h3>📊 Benchmark Target Selector</h3>
+      <h3>📊 Benchmark The Next Prompt</h3>
       <button class="modal-close" onclick="closeModal('benchmarkPromptSelectorModal')" title="Close">✕</button>
     </div>
-    <div class="benchmark-runs-summary">Use the prompt you are about to run, and choose which benchmark definition should evaluate it.</div>
+    <div class="benchmark-runs-summary">Select which benchmark definition should evaluate the prompt you are about to send. This does not replace the prompt in the input box.</div>
     <div class="benchmark-selector-list" id="benchmarkPromptSelectorList"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal('benchmarkPromptSelectorModal')">Cancel</button>
-      <button class="btn-primary" onclick="applySelectedBenchmarkPrompt()">Use for Benchmark</button>
+      <button class="btn-primary" onclick="applySelectedBenchmarkPrompt()">Set Target For Next Prompt</button>
     </div>
   </div>
 </div>
@@ -2237,6 +2258,10 @@ function applyOutputLanguagePreference(language) {
 
   if (document.getElementById('activityLogModal')?.classList.contains('visible')) {
     renderActivityLogModal();
+  }
+
+  if (document.getElementById('benchmarkRunsModal')?.classList.contains('visible')) {
+    renderBenchmarkRunsModal();
   }
 }
 
@@ -2918,7 +2943,7 @@ function syncSkillImprovementBenchmarkOptions() {
   if (!select) return;
 
   const previousValue = select.value;
-  const options = ['<option value="">Select target benchmark...</option>']
+  const options = ['<option value="">Choose benchmark target for next prompt...</option>']
     .concat(cachedBenchmarkDefinitions.map((benchmark) => `<option value="${esc(benchmark.id)}">${esc(benchmark.title)}</option>`));
   select.innerHTML = options.join('');
   if (previousValue && cachedBenchmarkDefinitions.some((benchmark) => benchmark.id === previousValue)) {
@@ -2948,7 +2973,7 @@ function updateSelectedBenchmarkPromptBadge() {
   const badge = document.getElementById('selectedBenchmarkPromptBadge');
   if (!badge) return;
   const selected = cachedBenchmarkDefinitions.find((benchmark) => benchmark.id === selectedBenchmarkPromptId);
-  badge.textContent = selected ? `Benchmark target: ${selected.title}` : 'No benchmark target selected';
+  badge.textContent = selected ? `Next prompt benchmark target: ${selected.title}` : 'Next prompt is not linked to a benchmark target';
 }
 
 function renderBenchmarkPromptSelectorModal() {
@@ -2961,10 +2986,11 @@ function renderBenchmarkPromptSelectorModal() {
 
   list.innerHTML = cachedBenchmarkDefinitions.map((benchmark) => {
     const isActive = benchmark.id === selectedBenchmarkPromptId;
+    const requiredArtifacts = Array.isArray(benchmark.requiredArtifacts) ? benchmark.requiredArtifacts : [];
     return `<div class="benchmark-selector-card ${isActive ? 'active' : ''}" onclick="selectBenchmarkPrompt('${esc(benchmark.id)}')">
       <div class="benchmark-selector-title">${esc(benchmark.title)}</div>
       <div class="benchmark-selector-meta">${esc(benchmark.id)} • ${esc(benchmark.promptSource || 'unknown source')}</div>
-      <div class="benchmark-selector-note">Required artifacts: ${esc(String((benchmark.requiredArtifacts || []).length))}</div>
+      <div class="benchmark-selector-note">Evaluates the next prompt against ${esc(String(requiredArtifacts.length))} required artifact${requiredArtifacts.length === 1 ? '' : 's'}</div>
     </div>`;
   }).join('');
 }
@@ -3671,12 +3697,15 @@ function appendMessage(msg) {
   const div = document.createElement('div');
   div.className = `message ${msg.role}`;
   if (msg.id) div.dataset.msgId = msg.id;
-  const time = new Date(msg.timestamp).toLocaleTimeString('ja-JP', { hour: '2-digit', minute: '2-digit' });
+  const metadata = parseMessageMetadata(msg);
+  const benchmarkInsightHtml = renderAssistantBenchmarkInsight(metadata);
+  const time = new Date(msg.timestamp).toLocaleTimeString(getOutputLanguageLocale(), { hour: '2-digit', minute: '2-digit' });
   const roleLabel = msg.role === 'user' ? (msg.user_id || 'You') : msg.role === 'assistant' ? 'CoreClaw' : 'System';
 
   div.innerHTML = `
     <div class="msg-role">${roleLabel}</div>
     <div class="msg-content">${renderMarkdown(msg.content)}</div>
+    ${benchmarkInsightHtml}
     <span class="msg-time">${time}</span>
   `;
   area.appendChild(div);
@@ -3994,6 +4023,10 @@ function buildBenchmarkSkillDiff(currentSnapshot, previousSnapshot) {
     return {
       summary: 'Baseline snapshot for this skill',
       files: currentSnapshot.files.slice(0, 6).map(file => `base:${file.path}`),
+      added: currentSnapshot.files.map((file) => file.path),
+      changed: [],
+      removed: [],
+      isBaseline: true,
     };
   }
 
@@ -4024,6 +4057,10 @@ function buildBenchmarkSkillDiff(currentSnapshot, previousSnapshot) {
     return {
       summary: 'No skill file changes compared with the previous run',
       files: [],
+      added,
+      changed,
+      removed,
+      isBaseline: false,
     };
   }
 
@@ -4034,7 +4071,175 @@ function buildBenchmarkSkillDiff(currentSnapshot, previousSnapshot) {
       ...changed.map((filePath) => `~ ${filePath}`),
       ...removed.map((filePath) => `- ${filePath}`),
     ].slice(0, 10),
+    added,
+    changed,
+    removed,
+    isBaseline: false,
   };
+}
+
+function truncateSingleLineText(text, maxLength) {
+  const normalized = String(text || '').replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  if (normalized.length <= maxLength) return normalized;
+  return `${normalized.slice(0, Math.max(0, maxLength - 1)).trimEnd()}…`;
+}
+
+function parseMessageMetadata(msg) {
+  try {
+    return msg?.metadata ? JSON.parse(msg.metadata) : {};
+  } catch {
+    return {};
+  }
+}
+
+function formatBenchmarkSkillDiffSummary(skillDiff) {
+  if (!skillDiff) return '';
+  const addedCount = Array.isArray(skillDiff.added) ? skillDiff.added.length : 0;
+  const changedCount = Array.isArray(skillDiff.changed) ? skillDiff.changed.length : 0;
+  const removedCount = Array.isArray(skillDiff.removed) ? skillDiff.removed.length : 0;
+
+  if (skillDiff.isBaseline) {
+    return outputLanguageText('この benchmark target では今回が最初の Skill スナップショットです', 'First recorded skill snapshot for this benchmark target');
+  }
+  if (!addedCount && !changedCount && !removedCount) {
+    return outputLanguageText('前回の run と比べて Skill ファイルの差分はありません', 'No skill file changes compared with the previous run');
+  }
+  return outputLanguageText(
+    `前回比 Skill 差分: +${addedCount} / ~${changedCount} / -${removedCount}`,
+    `Skill diff vs previous run: +${addedCount} / ~${changedCount} / -${removedCount}`,
+  );
+}
+
+function buildBenchmarkSkillImprovementInsight(source, previousComparableRun, derivedSkillDiff) {
+  const manifest = source?.manifest || {};
+  const evaluation = source?.evaluation || null;
+  const artifactCheck = source?.artifactCheck || null;
+  const skillSnapshot = source?.skillSnapshot || null;
+  const skillDiff = source?.skillDiff || derivedSkillDiff || null;
+  const previousComparableSnapshotUnchanged = Boolean(
+    source?.previousComparableSnapshotUnchanged
+    || (
+      previousComparableRun?.skillSnapshot?.sha256
+      && skillSnapshot?.sha256
+      && previousComparableRun.skillSnapshot.sha256 === skillSnapshot.sha256
+    ),
+  );
+  if (!manifest.skill) return null;
+
+  const facts = [];
+  const suggestions = [];
+  const missingChecks = Array.isArray(artifactCheck?.checks)
+    ? artifactCheck.checks.filter((item) => !item.exists)
+    : [];
+  const promptExcerpt = truncateSingleLineText(manifest.promptText || '', 140);
+  const benchmarkLabel = manifest.benchmarkDefinitionTitle || manifest.promptLabel || manifest.benchmarkDefinitionId || '';
+  const skillDiffSummary = formatBenchmarkSkillDiffSummary(skillDiff);
+  const skillFileCount = skillSnapshot?.fileCount || manifest.skillSnapshotFileCount || 0;
+
+  if (manifest.mode === 'prompt-run' || manifest.mode === 'skill-improvement') {
+    facts.push(outputLanguageText('入力欄から実際に送信したプロンプトを評価しました', 'Evaluated the prompt that was actually sent from the input box'));
+  }
+  facts.push(outputLanguageText(`スキル: ${manifest.skill}`, `Skill: ${manifest.skill}`));
+  if (benchmarkLabel) facts.push(outputLanguageText(`対象 benchmark: ${benchmarkLabel}`, `Target benchmark: ${benchmarkLabel}`));
+  if (promptExcerpt) facts.push(outputLanguageText(`プロンプト抜粋: ${promptExcerpt}`, `Prompt excerpt: ${promptExcerpt}`));
+  if (skillFileCount) {
+    facts.push(outputLanguageText(`今回の run で Skill ファイル ${skillFileCount} 件を記録しました`, `Captured ${skillFileCount} skill file${skillFileCount === 1 ? '' : 's'} for this run`));
+  }
+  if (manifest.skillImprovementNote) {
+    facts.push(outputLanguageText(`改訂メモ: ${manifest.skillImprovementNote}`, `Revision note: ${manifest.skillImprovementNote}`));
+  }
+  if (evaluation?.result) {
+    facts.push(outputLanguageText(
+      `Benchmark 結果: ${String(evaluation.result).toUpperCase()}`,
+      `Benchmark result: ${String(evaluation.result).toUpperCase()}`,
+    ));
+  }
+  if (missingChecks.length) {
+    facts.push(outputLanguageText(
+      `不足している必須 artifact: ${missingChecks.map((item) => item.path).join(', ')}`,
+      `Missing required artifacts: ${missingChecks.map((item) => item.path).join(', ')}`,
+    ));
+  } else if (Array.isArray(artifactCheck?.checks) && artifactCheck.checks.length) {
+    facts.push(outputLanguageText('必須 benchmark artifact はすべて生成されました', 'All required benchmark artifacts were produced'));
+  }
+  if (skillDiffSummary) {
+    facts.push(skillDiffSummary);
+  }
+
+  if (missingChecks.length) {
+    suggestions.push(outputLanguageText(
+      `${manifest.skill} に明示的な出力契約を追加し、常に ${missingChecks.map((item) => item.path).join(', ')} を生成するようにします。`,
+      `Add an explicit output contract to ${manifest.skill} so the agent always produces ${missingChecks.map((item) => item.path).join(', ')}.`,
+    ));
+  }
+  if (evaluation?.result === 'fail') {
+    suggestions.push(outputLanguageText(
+      `${benchmarkLabel || 'この target'} の成功条件を ${manifest.skill} のチェックリストと最終セルフレビュー手順に移します。`,
+      `Move the benchmark success criteria for ${benchmarkLabel || 'this target'} into ${manifest.skill}'s checklist and final self-review steps.`,
+    ));
+  }
+  if (skillDiff?.isBaseline) {
+    suggestions.push(outputLanguageText(
+      `${manifest.skill} の初回スナップショットです。以後の比較前に、安定したベースライン手順を SKILL.md に記録してください。`,
+      `This is the first captured snapshot for ${manifest.skill}. Record a stable baseline procedure in SKILL.md before comparing further revisions.`,
+    ));
+  } else if (skillDiff && !skillDiff.added.length && !skillDiff.changed.length && !skillDiff.removed.length && evaluation?.result !== 'pass') {
+    suggestions.push(outputLanguageText(
+      'Skill ファイルに変更がありません。プロンプトだけでなく、ツール順序、必須出力、受け入れ条件を Skill 自体に反映してください。',
+      'The skill files did not change. Update the skill itself, not only the prompt, with tool order, required outputs, and acceptance checks for this benchmark.',
+    ));
+  }
+  if ((skillDiff?.changed.length || 0) + (skillDiff?.added.length || 0) + (skillDiff?.removed.length || 0) > 3 && evaluation?.result === 'fail') {
+    suggestions.push(outputLanguageText(
+      '変更ファイルが多いまま benchmark が失敗しています。各 Skill 編集の効果を測りやすくするため、変更範囲を絞ってください。',
+      'The revision touched many files while the benchmark still failed. Narrow the change set so the impact of each skill edit is easier to measure.',
+    ));
+  }
+  if (evaluation?.result === 'pass' && ((skillDiff?.changed.length || 0) > 0 || (skillDiff?.added.length || 0) > 0)) {
+    suggestions.push(outputLanguageText(
+      `成功した手順を ${manifest.skill} の再利用可能なチェックリストや例に昇格させ、同じ挙動を再現しやすくします。`,
+      `Promote the successful procedure into ${manifest.skill}'s reusable checklist or examples so the same behavior is repeatable.`,
+    ));
+  }
+  if (manifest.mode === 'skill-improvement' && !manifest.skillImprovementNote) {
+    suggestions.push(outputLanguageText(
+      'Skill improvement run を記録するときは短い改訂メモを残し、後続比較で benchmark が動いた理由を追えるようにしてください。',
+      'Write a short revision note when recording skill improvement runs so later comparisons explain why the benchmark moved.',
+    ));
+  }
+  if (previousComparableSnapshotUnchanged && evaluation?.result !== 'pass') {
+    suggestions.push(outputLanguageText(
+      '前回の比較対象 run と Skill スナップショット hash が同じです。benchmark の再実行前に Skill 内容を変更してください。',
+      'The skill snapshot hash is unchanged from the previous comparable run. Change the skill content before relying on another benchmark rerun.',
+    ));
+  }
+  if (!suggestions.length) {
+    suggestions.push(outputLanguageText(
+      '現在の Skill 挙動は維持しつつ、意味のある改訂ごとに benchmark run を継続記録して改善の安定性を確認してください。',
+      'Keep the current skill behavior, but continue collecting benchmark runs after each meaningful skill revision to confirm the improvement is stable.',
+    ));
+  }
+
+  return {
+    facts,
+    suggestions: suggestions.slice(0, 4),
+  };
+}
+
+function renderBenchmarkInsightCard(skillInsight, extraClassName = '') {
+  if (!skillInsight) return '';
+  return `<div class="benchmark-run-insight ${extraClassName}">
+    <div class="benchmark-run-insight-title">${esc(outputLanguageText('Skill 改善ブリーフ', 'Skill Improvement Brief'))}</div>
+    <div class="benchmark-run-insight-facts">${skillInsight.facts.map((item) => `<div class="benchmark-run-insight-fact">${esc(item)}</div>`).join('')}</div>
+    <div class="benchmark-run-insight-suggestions">${skillInsight.suggestions.map((item) => `<div class="benchmark-run-insight-suggestion">${esc(item)}</div>`).join('')}</div>
+  </div>`;
+}
+
+function renderAssistantBenchmarkInsight(metadata) {
+  const skillInsight = buildBenchmarkSkillImprovementInsight(metadata?.benchmarkInsight || null);
+  if (!skillInsight) return '';
+  return renderBenchmarkInsightCard(skillInsight, 'assistant-benchmark-insight');
 }
 
 function findPreviousComparableBenchmarkRun(runs, currentIndex) {
@@ -4070,11 +4275,14 @@ function renderBenchmarkRunsModal() {
   const skillImprovementCount = runs.filter((run) => run.manifest?.mode === 'skill-improvement').length;
 
   summary.textContent = runs.length
-    ? `${runs.length} 件の benchmark run • PASS ${passCount} / FAIL ${failCount} • Skill improvement ${skillImprovementCount}`
-    : 'まだ benchmark run はありません。';
+    ? outputLanguageText(
+        `${runs.length} 件の benchmark run • PASS ${passCount} / FAIL ${failCount} • Skill improvement ${skillImprovementCount}`,
+        `${runs.length} benchmark runs • PASS ${passCount} / FAIL ${failCount} • Skill improvement ${skillImprovementCount}`,
+      )
+    : outputLanguageText('まだ benchmark run はありません。', 'No benchmark runs yet.');
 
   if (!runs.length) {
-    list.innerHTML = '<div class="benchmark-run-empty">このチャットでは benchmark run がまだ記録されていません。</div>';
+    list.innerHTML = `<div class="benchmark-run-empty">${esc(outputLanguageText('このチャットでは benchmark run がまだ記録されていません。', 'No benchmark runs have been recorded in this chat yet.'))}</div>`;
     return;
   }
 
@@ -4085,6 +4293,7 @@ function renderBenchmarkRunsModal() {
     const skillSnapshot = run.skillSnapshot || null;
     const previousComparableRun = findPreviousComparableBenchmarkRun(runs, index);
     const skillDiff = buildBenchmarkSkillDiff(skillSnapshot, previousComparableRun?.skillSnapshot || null);
+    const skillInsight = buildBenchmarkSkillImprovementInsight(run, previousComparableRun, skillDiff);
     const finishedAt = manifest.finishedAt || manifest.startedAt;
     const missingReasons = Array.isArray(evaluation?.reasons) && evaluation.reasons.length
       ? evaluation.reasons.join(', ')
@@ -4107,17 +4316,18 @@ function renderBenchmarkRunsModal() {
         <span class="benchmark-run-title">${esc(manifest.promptLabel || 'benchmark')}</span>
         <span class="benchmark-run-time">${esc(finishedAt ? new Date(finishedAt).toLocaleString('ja-JP') : '—')}</span>
       </div>
-      <div class="benchmark-run-source">source: ${esc(manifest.promptSource || 'unknown')}</div>
-      <div class="benchmark-run-summary">${esc(evaluation?.summary || '評価結果はまだありません。')}</div>
-      ${manifest.skillImprovementNote ? `<div class="benchmark-run-summary">skill note: ${esc(manifest.skillImprovementNote)}</div>` : ''}
+      <div class="benchmark-run-source">${esc(outputLanguageText('ソース', 'Source'))}: ${esc(manifest.promptSource || 'unknown')}</div>
+      <div class="benchmark-run-summary">${esc(evaluation?.summary || outputLanguageText('評価結果はまだありません。', 'No evaluation result yet.'))}</div>
+      ${manifest.skillImprovementNote ? `<div class="benchmark-run-summary">${esc(outputLanguageText('skill メモ', 'Skill note'))}: ${esc(manifest.skillImprovementNote)}</div>` : ''}
       ${meta.length ? `<div class="benchmark-run-meta">${meta.map((item) => `<span>${esc(item)}</span>`).join('')}</div>` : ''}
       ${skillDiff ? `<div class="benchmark-run-diff">
-        <div class="benchmark-run-diff-title">Skill Revision Diff</div>
-        <div class="benchmark-run-diff-summary">${esc(skillDiff.summary)}</div>
+        <div class="benchmark-run-diff-title">${esc(outputLanguageText('Skill 改訂差分', 'Skill Revision Diff'))}</div>
+        <div class="benchmark-run-diff-summary">${esc(formatBenchmarkSkillDiffSummary(skillDiff))}</div>
         ${skillDiff.files.length ? `<div class="benchmark-run-diff-files">${skillDiff.files.map((item) => `<span>${esc(item)}</span>`).join('')}</div>` : ''}
       </div>` : ''}
-      ${checks.length ? `<div class="benchmark-run-artifacts">${checks.map((item) => `<div class="benchmark-run-artifact ${item.exists ? 'present' : 'missing'}"><span class="benchmark-run-artifact-path">${esc(item.path)}</span><span class="benchmark-run-artifact-status">${item.exists ? `あり • ${item.sizeBytes} B` : '欠落'}</span></div>`).join('')}</div>` : ''}
-      ${missingReasons ? `<div class="benchmark-run-reasons">reasons: ${esc(missingReasons)}</div>` : ''}
+      ${renderBenchmarkInsightCard(skillInsight)}
+      ${checks.length ? `<div class="benchmark-run-artifacts">${checks.map((item) => `<div class="benchmark-run-artifact ${item.exists ? 'present' : 'missing'}"><span class="benchmark-run-artifact-path">${esc(item.path)}</span><span class="benchmark-run-artifact-status">${item.exists ? esc(outputLanguageText(`あり • ${item.sizeBytes} B`, `present • ${item.sizeBytes} B`)) : esc(outputLanguageText('欠落', 'missing'))}</span></div>`).join('')}</div>` : ''}
+      ${missingReasons ? `<div class="benchmark-run-reasons">${esc(outputLanguageText('理由', 'Reasons'))}: ${esc(missingReasons)}</div>` : ''}
     </div>`;
   }).join('');
 }
@@ -5034,8 +5244,8 @@ async function loadSkillList() {
     cachedSkills = await res.json();
     const list = document.getElementById('skillList');
     const empty = document.getElementById('skillEmpty');
-    // Update skill count in sidebar
-    document.getElementById('skillCount').textContent = cachedSkills.length;
+    const skillCount = document.getElementById('skillCount');
+    if (skillCount) skillCount.textContent = cachedSkills.length;
     if (!cachedSkills.length) {
       list.innerHTML = '';
       empty.style.display = '';
@@ -5606,6 +5816,7 @@ function updateChatSkillBadge() {
 
 function updateSidebarSkillBadge(skillStr) {
   const badge = document.getElementById('activeSkillBadge');
+  if (!badge) return;
   if (!skillStr) { badge.textContent = ''; return; }
   badge.textContent = skillStr.trim();
 }

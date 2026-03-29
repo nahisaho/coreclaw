@@ -16,6 +16,7 @@ import {
   createExperiment,
   type ExperimentActivityEvent,
   type BenchmarkRunManifest,
+  type BenchmarkRunRecord,
   type BenchmarkSkillSnapshot,
   getExperiment,
   listExperiments,
@@ -47,6 +48,7 @@ import {
   writeBenchmarkEvaluationResult,
   writeBenchmarkSkillSnapshot,
   getArtifactSizeBytes,
+  updateMessageContentWithMetadata,
 } from './experiments.js';
 import {
   getMemory,
@@ -73,6 +75,8 @@ import { classifyUpdaterDirtyFiles, parseDirtyTrackedFiles } from './update-util
 import { createDeflateRaw, inflateRawSync } from 'zlib';
 import { checkCopilotAuthStatus, resolveGitHubToken, type CopilotAuthStatus } from './github-auth.js';
 import {
+  type BenchmarkArtifactCheck,
+  type BenchmarkEvaluationResult,
   buildBenchmarkArtifactCheck,
   buildBenchmarkEvaluationResult,
   getBenchmarkDefinitionById,
@@ -794,7 +798,7 @@ interface ActiveTask {
   finishedAt?: string;
   streamingMsgId?: string;  // DB message ID for in-progress response
   streamingText: string;    // accumulated chunk text
-  finalMessage?: { id: string; experiment_id: string; role: string; content: string; timestamp: string };  // saved when done, for replay on reconnect
+  finalMessage?: { id: string; experiment_id: string; role: string; content: string; timestamp: string; metadata?: string };  // saved when done, for replay on reconnect
   _heartbeat?: ReturnType<typeof setInterval>;  // periodic heartbeat timer
   _lastStatus?: string;  // last status line sent
   _statusHistory?: { message: string; timestamp: string }[];
@@ -809,6 +813,27 @@ interface ActiveTask {
   benchmarkRequiredArtifacts?: string[];
   skillImprovementNote?: string;
   skillSnapshot?: BenchmarkSkillSnapshot | null;
+}
+
+interface BenchmarkSkillDiffSummary {
+  summary: string;
+  files: string[];
+  added: string[];
+  changed: string[];
+  removed: string[];
+  isBaseline: boolean;
+}
+
+interface BenchmarkAssistantInsight {
+  runId: string;
+  manifest: Pick<
+    BenchmarkRunManifest,
+    'mode' | 'benchmarkDefinitionId' | 'benchmarkDefinitionTitle' | 'promptLabel' | 'promptText' | 'skill' | 'skillImprovementNote'
+  >;
+  evaluation: Pick<BenchmarkEvaluationResult, 'result' | 'summary'> | null;
+  artifactCheck: Pick<BenchmarkArtifactCheck, 'checks' | 'artifactCoverage' | 'allRequiredPresent'> | null;
+  skillDiff: BenchmarkSkillDiffSummary | null;
+  previousComparableSnapshotUnchanged: boolean;
 }
 
 const activeTasks = new Map<string, ActiveTask>();
@@ -971,8 +996,139 @@ function createBenchmarkRunManifest(
   return createBenchmarkRunContext(experimentId, taskId, promptText, startedAt, benchmark).manifest;
 }
 
-function finalizeBenchmarkRun(task: ActiveTask, finalResponse: string): void {
-  if (!task.benchmarkRunId || !task.benchmarkLabel || !task.benchmarkRequiredArtifacts) return;
+function buildBenchmarkSkillDiff(
+  currentSnapshot: BenchmarkSkillSnapshot | null,
+  previousSnapshot: BenchmarkSkillSnapshot | null,
+): BenchmarkSkillDiffSummary | null {
+  if (!currentSnapshot) return null;
+
+  if (!previousSnapshot) {
+    return {
+      summary: 'First recorded skill snapshot for this benchmark target',
+      files: currentSnapshot.files.map((file) => `+ ${file.path}`).slice(0, 10),
+      added: currentSnapshot.files.map((file) => file.path),
+      changed: [],
+      removed: [],
+      isBaseline: true,
+    };
+  }
+
+  const currentFiles = new Map(currentSnapshot.files.map((file) => [file.path, file]));
+  const previousFiles = new Map(previousSnapshot.files.map((file) => [file.path, file]));
+  const added: string[] = [];
+  const removed: string[] = [];
+  const changed: string[] = [];
+
+  for (const [filePath, file] of currentFiles) {
+    const previousFile = previousFiles.get(filePath);
+    if (!previousFile) {
+      added.push(filePath);
+      continue;
+    }
+    if (previousFile.sha256 !== file.sha256) {
+      changed.push(filePath);
+    }
+  }
+
+  for (const [filePath] of previousFiles) {
+    if (!currentFiles.has(filePath)) {
+      removed.push(filePath);
+    }
+  }
+
+  if (!added.length && !removed.length && !changed.length) {
+    return {
+      summary: 'No skill file changes compared with the previous run',
+      files: [],
+      added,
+      changed,
+      removed,
+      isBaseline: false,
+    };
+  }
+
+  return {
+    summary: `Skill diff vs previous run: +${added.length} / ~${changed.length} / -${removed.length}`,
+    files: [
+      ...added.map((filePath) => `+ ${filePath}`),
+      ...changed.map((filePath) => `~ ${filePath}`),
+      ...removed.map((filePath) => `- ${filePath}`),
+    ].slice(0, 10),
+    added,
+    changed,
+    removed,
+    isBaseline: false,
+  };
+}
+
+function findPreviousComparableBenchmarkRun(runs: BenchmarkRunRecord[], currentRunId: string): BenchmarkRunRecord | null {
+  const currentIndex = runs.findIndex((run) => run.manifest.runId === currentRunId);
+  if (currentIndex === -1) return null;
+
+  const currentRun = runs[currentIndex];
+  const currentManifest = currentRun.manifest || {};
+  if (!currentManifest.skill) return null;
+
+  for (let index = currentIndex + 1; index < runs.length; index += 1) {
+    const candidate = runs[index];
+    const candidateManifest = candidate.manifest || {};
+    if (candidateManifest.skill !== currentManifest.skill) continue;
+    if (
+      currentManifest.benchmarkDefinitionId
+      && candidateManifest.benchmarkDefinitionId
+      && candidateManifest.benchmarkDefinitionId !== currentManifest.benchmarkDefinitionId
+    ) {
+      continue;
+    }
+    return candidate;
+  }
+
+  return null;
+}
+
+function buildBenchmarkAssistantInsight(
+  currentRun: BenchmarkRunRecord,
+  previousComparableRun: BenchmarkRunRecord | null,
+  skillDiff: BenchmarkSkillDiffSummary | null,
+): BenchmarkAssistantInsight | null {
+  const manifest = currentRun.manifest || {};
+  if (!manifest.skill) return null;
+
+  return {
+    runId: manifest.runId,
+    manifest: {
+      mode: manifest.mode,
+      benchmarkDefinitionId: manifest.benchmarkDefinitionId,
+      benchmarkDefinitionTitle: manifest.benchmarkDefinitionTitle,
+      promptLabel: manifest.promptLabel,
+      promptText: manifest.promptText,
+      skill: manifest.skill,
+      skillImprovementNote: manifest.skillImprovementNote,
+    },
+    evaluation: currentRun.evaluation
+      ? {
+          result: currentRun.evaluation.result,
+          summary: currentRun.evaluation.summary,
+        }
+      : null,
+    artifactCheck: currentRun.artifactCheck
+      ? {
+          checks: currentRun.artifactCheck.checks,
+          artifactCoverage: currentRun.artifactCheck.artifactCoverage,
+          allRequiredPresent: currentRun.artifactCheck.allRequiredPresent,
+        }
+      : null,
+    skillDiff,
+    previousComparableSnapshotUnchanged: Boolean(
+      previousComparableRun?.skillSnapshot?.sha256
+      && currentRun.skillSnapshot?.sha256
+      && previousComparableRun.skillSnapshot.sha256 === currentRun.skillSnapshot.sha256,
+    ),
+  };
+}
+
+function finalizeBenchmarkRun(task: ActiveTask, finalResponse: string): BenchmarkAssistantInsight | null {
+  if (!task.benchmarkRunId || !task.benchmarkLabel || !task.benchmarkRequiredArtifacts) return null;
   const finalStatus = task.status === 'running' ? 'error' : task.status;
 
   const settings = loadSettings();
@@ -1022,6 +1178,13 @@ function finalizeBenchmarkRun(task: ActiveTask, finalResponse: string): void {
     finalResponse,
   );
   writeBenchmarkEvaluationResult(task.experimentId, task.benchmarkRunId, evaluation);
+
+  const runs = listBenchmarkRuns(task.experimentId);
+  const currentRun = runs.find((run) => run.manifest.runId === task.benchmarkRunId) || null;
+  if (!currentRun) return null;
+  const previousComparableRun = findPreviousComparableBenchmarkRun(runs, task.benchmarkRunId);
+  const skillDiff = buildBenchmarkSkillDiff(currentRun.skillSnapshot, previousComparableRun?.skillSnapshot || null);
+  return buildBenchmarkAssistantInsight(currentRun, previousComparableRun, skillDiff);
 }
 
 // ---------------------------------------------------------------------------
@@ -2173,13 +2336,22 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
             if (task._heartbeat) { clearInterval(task._heartbeat); task._heartbeat = undefined; }
             task.status = 'done';
             task.finishedAt = new Date().toISOString();
+            const benchmarkInsight = finalizeBenchmarkRun(task, fullResponse);
+            const assistantMetadata = benchmarkInsight ? { benchmarkInsight } : undefined;
             // Replace streaming message with final version
             if (task.streamingMsgId) {
-              updateMessageContent(task.streamingMsgId, fullResponse);
+              updateMessageContentWithMetadata(task.streamingMsgId, fullResponse, assistantMetadata);
             }
             const assistantMsg = task.streamingMsgId
-              ? { id: task.streamingMsgId, experiment_id: data.experimentId, role: 'assistant' as const, content: fullResponse, timestamp: new Date().toISOString() }
-              : addMessage(data.experimentId, 'assistant', fullResponse);
+              ? {
+                  id: task.streamingMsgId,
+                  experiment_id: data.experimentId,
+                  role: 'assistant' as const,
+                  content: fullResponse,
+                  timestamp: new Date().toISOString(),
+                  metadata: assistantMetadata ? JSON.stringify(assistantMetadata) : undefined,
+                }
+              : addMessage(data.experimentId, 'assistant', fullResponse, assistantMetadata);
             task.finalMessage = assistantMsg;
             appendTerminalProcessLog(task.experimentId, {
               id: task.id,
@@ -2205,7 +2377,6 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               _lastStatus: task._lastStatus,
               _statusHistory: task._statusHistory,
             }, fullResponse);
-            finalizeBenchmarkRun(task, fullResponse);
             syncProcessHistory(task);
             broadcastToExperiment(data.experimentId, {
               type: 'agent_done',
@@ -2304,7 +2475,11 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
           _lastStatus: task._lastStatus,
           _statusHistory: task._statusHistory,
         }, reply.content);
-        finalizeBenchmarkRun(task, reply.content);
+        const benchmarkInsight = finalizeBenchmarkRun(task, reply.content);
+        if (benchmarkInsight) {
+          updateMessageContentWithMetadata(reply.id, reply.content, { benchmarkInsight });
+          reply.metadata = JSON.stringify({ benchmarkInsight });
+        }
         persistAndBroadcastActivity(task, buildTaskActivityEvent(task, 'task', 'complete', 'Task completed', {
           status: 'done',
           taskPrompt: task.prompt,
