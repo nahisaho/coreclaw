@@ -239,7 +239,7 @@ test.describe('Settings', () => {
     await page.click('.settings-btn');
 
     // Switch to STT Provider tab
-    await page.click('button:has-text("STT Provider")');
+    await page.click('#settingsTabButtonStt');
 
     // Select OpenAI
     await page.selectOption('#sttProviderSelect', 'openai');
@@ -268,9 +268,9 @@ test.describe('Settings', () => {
     await page.selectOption('#settingsOutputLanguage', 'en');
 
     // Switch to GitHub tab
-    await page.click('button:has-text("GitHub")');
+    await page.click('#settingsTabButtonGithub');
     await page.fill('#settingsGithubUser', 'test-user');
-    await page.click('#settingsModal button:has-text("Save")');
+    await page.click('#settingsSaveButton');
 
     // Save closes the modal
     await expect(page.locator('#settingsModal')).not.toHaveClass(/visible/);
@@ -279,6 +279,30 @@ test.describe('Settings', () => {
     await page.click('.settings-btn');
     await expect(page.locator('#settingsOutputLanguage')).toHaveValue('en');
     await expect(page.locator('#settingsGithubUser')).toHaveValue('test-user');
+  });
+
+  test('General settings labels switch between Japanese and English', async ({ page }) => {
+    await page.goto('/');
+    await page.click('.settings-btn');
+
+    await page.selectOption('#settingsOutputLanguage', 'ja');
+    await page.click('#settingsSaveButton');
+
+    await page.click('.settings-btn');
+
+    await expect(page.locator('#settingsTabButtonGeneral')).toHaveText('一般');
+    await expect(page.locator('#settingsOutputLanguageHeading')).toHaveText('🗣 出力言語');
+    await expect(page.locator('#settingsOutputLanguageLabel')).toContainText('言語');
+    await expect(page.locator('#settingsOutputLanguageHint')).toHaveText('エージェントの最終応答に使う言語を選択します。');
+
+    await page.selectOption('#settingsOutputLanguage', 'en');
+    await page.click('#settingsSaveButton');
+
+    await page.click('.settings-btn');
+    await expect(page.locator('#settingsTabButtonGeneral')).toHaveText('General');
+    await expect(page.locator('#settingsOutputLanguageHeading')).toHaveText('🗣 Output Language');
+    await expect(page.locator('#settingsOutputLanguageLabel')).toContainText('Language');
+    await expect(page.locator('#settingsOutputLanguageHint')).toHaveText('Choose the output language for the agent\'s final response.');
   });
 
   test('shows Copilot auth precheck status in sidebar and settings', async ({ page }) => {
@@ -298,15 +322,15 @@ test.describe('Settings', () => {
 
     await page.goto('/');
 
-    await expect(page.locator('#sidebarAuthStatus')).toContainText('Copilot認証: 無効');
+    await expect(page.locator('#sidebarAuthStatus')).toContainText(/Copilot Auth: (Invalid|無効)/);
     await expect(page.locator('#sidebarAuthStatus')).toContainText('GitHub Token が無効または期限切れです。');
 
     await page.click('.settings-btn');
-    await page.click('button:has-text("Authentication")');
+    await page.click('#settingsTabButtonAuth');
 
-    await expect(page.locator('#settingsCopilotAuthStatus')).toContainText('無効');
+    await expect(page.locator('#settingsCopilotAuthStatus')).toContainText(/(無効|Invalid)/);
     await expect(page.locator('#settingsCopilotAuthStatus')).toContainText('GitHub Token が無効または期限切れです。');
-    await expect(page.locator('#settingsCopilotAuthStatus')).toContainText('取得元: Settings');
+    await expect(page.locator('#settingsCopilotAuthStatus')).toContainText(/(取得元|Source): Settings/);
   });
 
   test('add MCP server manually', async ({ page }) => {
@@ -314,7 +338,7 @@ test.describe('Settings', () => {
     await page.click('.settings-btn');
 
     // Switch to MCP Servers tab
-    await page.click('button:has-text("MCP Servers")');
+    await page.click('#settingsTabButtonMcp');
     await clearMcpServers(page);
     await page.click('.btn-add-mcp');
     // MCP server card should appear
@@ -324,7 +348,7 @@ test.describe('Settings', () => {
   test('add multiple MCP servers and remove one', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("MCP Servers")');
+    await page.click('#settingsTabButtonMcp');
     await clearMcpServers(page);
 
     // Add two servers
@@ -340,10 +364,10 @@ test.describe('Settings', () => {
   test('add ToolUniverse preset', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("MCP Servers")');
+    await page.click('#settingsTabButtonMcp');
     await clearMcpServers(page);
 
-    await page.click('button:has-text("ToolUniverse")');
+    await page.click('#settingsAddToolUniverseButton');
     await expect(page.locator('.mcp-server-card')).toHaveCount(1);
 
     // Verify preset values
@@ -357,11 +381,11 @@ test.describe('Settings', () => {
   test('does not duplicate ToolUniverse preset', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("MCP Servers")');
+    await page.click('#settingsTabButtonMcp');
     await clearMcpServers(page);
 
-    await page.click('button:has-text("ToolUniverse")');
-    await page.click('button:has-text("ToolUniverse")');
+    await page.click('#settingsAddToolUniverseButton');
+    await page.click('#settingsAddToolUniverseButton');
 
     await expect(page.locator('.mcp-server-card')).toHaveCount(1);
     await expect(page.locator('.mcp-server-card input.mcp-name')).toHaveValue('ToolUniverse');
@@ -370,10 +394,10 @@ test.describe('Settings', () => {
   test('add Deep Research preset', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("MCP Servers")');
+    await page.click('#settingsTabButtonMcp');
     await clearMcpServers(page);
 
-    await page.click('button:has-text("Deep Research")');
+    await page.click('#settingsAddDeepResearchButton');
     await expect(page.locator('.mcp-server-card')).toHaveCount(1);
 
     // Verify preset values
@@ -386,7 +410,7 @@ test.describe('Settings', () => {
   test('MCP server card has type selector with stdio/SSE/Streamable HTTP', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("MCP Servers")');
+    await page.click('#settingsTabButtonMcp');
     await clearMcpServers(page);
 
     await page.click('.btn-add-mcp');
@@ -425,7 +449,7 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonSkills');
 
     const marketplace = page.locator('#marketplaceSkillList');
     await expect(marketplace.locator('.skill-card')).toHaveCount(1);
@@ -457,7 +481,7 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonSkills');
     await page.locator('#marketplaceSkillList .marketplace-info-btn').click();
 
     await expect(page.locator('#marketplaceInfoModal')).toHaveClass(/visible/);
@@ -497,7 +521,7 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonSkills');
 
     const marketplace = page.locator('#marketplaceSkillList');
     await expect(marketplace.locator('.skill-card')).toHaveCount(2);
@@ -537,15 +561,15 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonSkills');
 
     const marketplace = page.locator('#marketplaceSkillList');
     await expect(marketplace).toContainText('First state');
     await expect(marketplace).toContainText('Version v0.1.0');
     await expect(marketplace).toContainText('Installed');
 
-    await page.click('button:has-text("Updates")');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonUpdates');
+    await page.click('#settingsTabButtonSkills');
 
     await expect(marketplace).toContainText('Refreshed state');
     await expect(marketplace).toContainText('Version v0.2.0');
@@ -570,7 +594,7 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonSkills');
 
     const skills = page.locator('#skillList');
     await expect(skills).toContainText('scientist');
@@ -606,7 +630,7 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonSkills');
 
     const skills = page.locator('#skillList');
     await expect(skills).toContainText('Version v1.2.3');
@@ -644,7 +668,7 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonSkills');
 
     const updateButton = page.locator('#skillList').getByRole('button', { name: 'Update', exact: true });
     await expect(updateButton).toBeDisabled();
@@ -679,7 +703,7 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonSkills');
 
     const updateButton = page.locator('#marketplaceSkillList').getByRole('button', { name: 'Update', exact: true });
     await expect(updateButton).toBeDisabled();
@@ -740,7 +764,7 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonSkills');
     await page.locator('#skillList button:has-text("Check")').click();
 
     const skills = page.locator('#skillList');
@@ -793,13 +817,13 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Skills")');
+    await page.click('#settingsTabButtonSkills');
 
     const skills = page.locator('#skillList');
     await expect(skills).toContainText('Marketplace v1.2.3');
     await expect(page.locator('#skillList').getByRole('button', { name: 'Update', exact: true })).toBeDisabled();
 
-    await page.click('button:has-text("Refresh Marketplace")');
+    await page.click('#settingsRefreshMarketplaceButton');
 
     await expect(skills).toContainText('Update available: v1.2.4');
     await expect(page.locator('#skillList').getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
@@ -848,7 +872,7 @@ test.describe('Settings', () => {
 
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("Updates")');
+    await page.click('#settingsTabButtonUpdates');
     await page.locator('#check-coreclaw').click();
     await expect(page.locator('#update-coreclaw')).toBeEnabled();
     await page.locator('#update-coreclaw').click();
@@ -860,20 +884,20 @@ test.describe('Settings', () => {
   test('MCP servers persist via settings save/reload', async ({ page }) => {
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("MCP Servers")');
+    await page.click('#settingsTabButtonMcp');
     await clearMcpServers(page);
 
     // Add a ToolUniverse preset
-    await page.click('button:has-text("ToolUniverse")');
+    await page.click('#settingsAddToolUniverseButton');
     await expect(page.locator('.mcp-server-card')).toHaveCount(1);
 
     // Save settings
-    await page.click('#settingsModal button:has-text("Save")');
+    await page.click('#settingsSaveButton');
     await expect(page.locator('#settingsModal')).not.toHaveClass(/visible/);
 
     // Reopen settings
     await page.click('.settings-btn');
-    await page.click('button:has-text("MCP Servers")');
+    await page.click('#settingsTabButtonMcp');
 
     // Server should still be there
     await expect(page.locator('.mcp-server-card')).toHaveCount(1);
@@ -904,14 +928,14 @@ test.describe('Settings', () => {
     // First, save MCP servers so checkboxes appear
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("MCP Servers")');
+    await page.click('#settingsTabButtonMcp');
 
     // Remove any existing servers first
     await clearMcpServers(page);
 
-    await page.click('button:has-text("ToolUniverse")');
-    await page.click('button:has-text("Deep Research")');
-    await page.click('#settingsModal button:has-text("Save")');
+    await page.click('#settingsAddToolUniverseButton');
+    await page.click('#settingsAddDeepResearchButton');
+    await page.click('#settingsSaveButton');
 
     // Open new chat modal
     await page.click('button:has-text("New Chat")');
@@ -936,13 +960,13 @@ test.describe('Settings', () => {
     // Save MCP servers first
     await page.goto('/');
     await page.click('.settings-btn');
-    await page.click('button:has-text("MCP Servers")');
+    await page.click('#settingsTabButtonMcp');
 
     // Remove any existing servers first
     await clearMcpServers(page);
 
-    await page.click('button:has-text("ToolUniverse")');
-    await page.click('#settingsModal button:has-text("Save")');
+    await page.click('#settingsAddToolUniverseButton');
+    await page.click('#settingsSaveButton');
 
     // Create a chat
     await page.click('button:has-text("New Chat")');
@@ -1647,7 +1671,7 @@ test.describe('Chat Flow', () => {
       await expect(page.locator('#asp-tools-' + taskId)).toContainText('OpenAlex_search_papers');
     });
 
-    test('benchmark selector loads canonical prompt and sends skill improvement metadata', async ({ page }) => {
+    test('benchmark selector keeps the current prompt and sends benchmark target metadata', async ({ page }) => {
       await page.addInitScript(() => {
         class MockWebSocket {
           static OPEN = 1;
@@ -1703,15 +1727,89 @@ test.describe('Chat Flow', () => {
 
       await createExperiment(page, 'Benchmark Improvement UI Test');
 
+      await page.fill('#chatInput', 'Prompt body about to run');
+
       await page.locator('#benchmarkPromptBtn').click();
       await page.locator('.benchmark-selector-card').click();
       await page.locator('#benchmarkPromptSelectorModal .btn-primary').click();
 
-      await expect(page.locator('#chatInput')).toHaveValue('Canonical benchmark prompt body');
-      await expect(page.locator('#selectedBenchmarkPromptBadge')).toContainText('Benchmark Prompt 1');
+      await expect(page.locator('#chatInput')).toHaveValue('Prompt body about to run');
+      await expect(page.locator('#selectedBenchmarkPromptBadge')).toContainText('Benchmark target: Benchmark Prompt 1');
+
+      await page.locator('#sendBtn').click();
+
+      const sentMessages = await page.evaluate(() => {
+        const socket = window.__mockSockets[0];
+        return socket ? socket.sent.map((raw) => JSON.parse(raw)) : [];
+      });
+      const chatMessage = sentMessages.findLast((message) => message.type === 'chat');
+      expect(chatMessage.content).toBe('Prompt body about to run');
+      expect(chatMessage.benchmarkId).toBe('benchmark-prompt-1');
+      expect(chatMessage.skillImprovement).toBeUndefined();
+    });
+
+    test('benchmark selector also feeds skill improvement metadata when enabled', async ({ page }) => {
+      await page.addInitScript(() => {
+        class MockWebSocket {
+          static OPEN = 1;
+          static CLOSED = 3;
+
+          constructor(url) {
+            this.url = url;
+            this.readyState = MockWebSocket.OPEN;
+            this.sent = [];
+            this.onopen = null;
+            this.onmessage = null;
+            this.onerror = null;
+            this.onclose = null;
+            window.__mockSockets = window.__mockSockets || [];
+            window.__mockSockets.push(this);
+            setTimeout(() => {
+              if (this.onopen) this.onopen();
+            }, 0);
+          }
+
+          send(payload) {
+            this.sent.push(payload);
+          }
+
+          close() {
+            this.readyState = MockWebSocket.CLOSED;
+            if (this.onclose) this.onclose();
+          }
+        }
+
+        window.__mockSockets = [];
+        window.WebSocket = MockWebSocket;
+      });
+
+      await page.route('**/api/benchmarks', async (route) => {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify({
+            benchmarks: [{
+              id: 'benchmark-prompt-1',
+              label: 'prompt-1-test',
+              title: 'Benchmark Prompt 1',
+              promptSource: 'tests/benchmark-prompts.json',
+              requiredArtifacts: ['report.md'],
+              promptText: 'Canonical benchmark prompt body',
+            }],
+          }),
+        });
+      });
+
+      await page.goto('/');
+
+      await createExperiment(page, 'Benchmark Skill Improvement UI Test');
+      await page.fill('#chatInput', 'Prompt body about to run');
+
+      await page.locator('#benchmarkPromptBtn').click();
+      await page.locator('.benchmark-selector-card').click();
+      await page.locator('#benchmarkPromptSelectorModal .btn-primary').click();
 
       await page.locator('#recordSkillImprovement').check();
-      await page.selectOption('#skillImprovementBenchmarkSelect', 'benchmark-prompt-1');
       await page.fill('#skillImprovementNote', 'Adjusted tool ordering');
       await page.locator('#sendBtn').click();
 
@@ -1720,7 +1818,8 @@ test.describe('Chat Flow', () => {
         return socket ? socket.sent.map((raw) => JSON.parse(raw)) : [];
       });
       const chatMessage = sentMessages.findLast((message) => message.type === 'chat');
-      expect(chatMessage.content).toBe('Canonical benchmark prompt body');
+      expect(chatMessage.content).toBe('Prompt body about to run');
+      expect(chatMessage.benchmarkId).toBe('benchmark-prompt-1');
       expect(chatMessage.skillImprovement).toEqual({
         enabled: true,
         benchmarkId: 'benchmark-prompt-1',

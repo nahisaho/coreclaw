@@ -801,7 +801,7 @@ interface ActiveTask {
   _lastStatusAt?: number;  // timestamp of the last non-heartbeat status line
   _heartbeatSent?: boolean;
   benchmarkRunId?: string;
-  benchmarkMode?: 'canonical' | 'skill-improvement';
+  benchmarkMode?: 'canonical' | 'prompt-run' | 'skill-improvement';
   benchmarkDefinitionId?: string;
   benchmarkDefinitionTitle?: string;
   benchmarkLabel?: string;
@@ -907,7 +907,7 @@ function createBenchmarkRunContext(
   promptText: string,
   startedAt: string,
   benchmark: { id: string; title: string; label: string; promptSource: string; requiredArtifacts: string[] },
-  options?: { mode?: 'canonical' | 'skill-improvement'; skillImprovementNote?: string },
+  options?: { mode?: 'canonical' | 'prompt-run' | 'skill-improvement'; skillImprovementNote?: string },
 ): { manifest: BenchmarkRunManifest; requiredArtifacts: string[]; skillSnapshot: BenchmarkSkillSnapshot | null } {
   const experiment = getExperiment(experimentId);
   const settings = loadSettings();
@@ -2054,9 +2054,10 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
         _statusHistory: [],
       };
       const benchmark = matchBenchmarkDefinition(data.content);
+      const requestedBenchmarkId = String(data.benchmarkId || '').trim();
       const requestedSkillImprovement = data.skillImprovement && data.skillImprovement.enabled
         ? {
-            benchmarkId: String(data.skillImprovement.benchmarkId || '').trim(),
+            benchmarkId: String(data.skillImprovement.benchmarkId || requestedBenchmarkId).trim(),
             note: String(data.skillImprovement.note || '').trim(),
           }
         : null;
@@ -2084,6 +2085,18 @@ function handleWsMessage(ws: WebSocket, raw: string): void {
               mode: 'skill-improvement',
               skillImprovementNote: requestedSkillImprovement.note,
             },
+          );
+        }
+      } else if (requestedBenchmarkId) {
+        const targetBenchmark = getBenchmarkDefinitionById(requestedBenchmarkId);
+        if (targetBenchmark) {
+          benchmarkContext = createBenchmarkRunContext(
+            data.experimentId,
+            taskId,
+            data.content,
+            task.startedAt,
+            targetBenchmark,
+            { mode: 'prompt-run' },
           );
         }
       }

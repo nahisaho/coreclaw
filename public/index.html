@@ -1688,17 +1688,17 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
         <input type="file" id="fileInput" multiple style="display:none" onchange="handleFileSelect(event)">
         <textarea id="chatInput" rows="1" placeholder="Ask about your experiment... (Ctrl+Enter to send)"
                   onkeydown="handleInputKey(event)" oninput="autoResize(this)"></textarea>
-        <button class="btn-benchmark" id="benchmarkPromptBtn" onclick="showBenchmarkPromptSelectorModal()" title="Insert benchmark prompt">📊</button>
+        <button class="btn-benchmark" id="benchmarkPromptBtn" onclick="showBenchmarkPromptSelectorModal()" title="Select benchmark target">📊</button>
         <button class="btn-mic" id="micBtn" onclick="toggleSpeech()" title="Speech to text">🎤</button>
         <button class="btn-send" id="sendBtn" onclick="sendMessage()">➤</button>
       </div>
         <div class="input-benchmark-row">
           <label><input type="checkbox" id="recordSkillImprovement" onchange="toggleSkillImprovementControls(this.checked)"> Record Skill Improvement</label>
-          <select id="skillImprovementBenchmarkSelect" disabled>
+          <select id="skillImprovementBenchmarkSelect" onchange="syncSelectedBenchmarkTarget(this.value)" disabled>
             <option value="">Select target benchmark...</option>
           </select>
           <input type="text" id="skillImprovementNote" placeholder="What changed in this skill revision?" disabled>
-          <span class="input-benchmark-pill" id="selectedBenchmarkPromptBadge">No benchmark prompt loaded</span>
+          <span class="input-benchmark-pill" id="selectedBenchmarkPromptBadge">No benchmark target selected</span>
         </div>
     </div>
   </main>
@@ -1778,18 +1778,18 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 <div class="modal-overlay" id="settingsModal">
   <div class="modal settings-modal">
     <div class="modal-header">
-      <h3>⚙️ Settings</h3>
-      <button class="modal-close" onclick="closeModal('settingsModal')" title="Close (Esc)">✕</button>
+      <h3 id="settingsModalTitle">⚙️ Settings</h3>
+      <button class="modal-close" id="settingsModalClose" onclick="closeModal('settingsModal')" title="Close (Esc)">✕</button>
     </div>
 
     <div class="settings-tabs">
-      <button class="settings-tab active" onclick="switchSettingsTab('general')">General</button>
-      <button class="settings-tab" onclick="switchSettingsTab('auth')">Authentication</button>
-      <button class="settings-tab" onclick="switchSettingsTab('stt')">STT Provider</button>
-      <button class="settings-tab" onclick="switchSettingsTab('skills')">Skills</button>
-      <button class="settings-tab" onclick="switchSettingsTab('github')">GitHub</button>
-      <button class="settings-tab" onclick="switchSettingsTab('mcp')">MCP Servers</button>
-      <button class="settings-tab" onclick="switchSettingsTab('updates')">Updates</button>
+      <button class="settings-tab active" id="settingsTabButtonGeneral" onclick="switchSettingsTab('general')">General</button>
+      <button class="settings-tab" id="settingsTabButtonAuth" onclick="switchSettingsTab('auth')">Authentication</button>
+      <button class="settings-tab" id="settingsTabButtonStt" onclick="switchSettingsTab('stt')">STT Provider</button>
+      <button class="settings-tab" id="settingsTabButtonSkills" onclick="switchSettingsTab('skills')">Skills</button>
+      <button class="settings-tab" id="settingsTabButtonGithub" onclick="switchSettingsTab('github')">GitHub</button>
+      <button class="settings-tab" id="settingsTabButtonMcp" onclick="switchSettingsTab('mcp')">MCP Servers</button>
+      <button class="settings-tab" id="settingsTabButtonUpdates" onclick="switchSettingsTab('updates')">Updates</button>
     </div>
 
     <div class="settings-tab-body">
@@ -1797,21 +1797,21 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <!-- Tab: General -->
       <div class="settings-tab-content active" id="settingsTab-general">
         <div class="settings-section">
-          <h4>🎨 View Mode</h4>
+          <h4 id="settingsViewModeHeading">🎨 View Mode</h4>
           <div class="theme-toggle">
             <button class="theme-btn" id="themeLight" onclick="setTheme('light')">☀️ Light</button>
             <button class="theme-btn active" id="themeDark" onclick="setTheme('dark')">🌙 Dark</button>
           </div>
         </div>
         <div class="settings-section">
-          <h4>🗣 Output Language</h4>
+          <h4 id="settingsOutputLanguageHeading">🗣 Output Language</h4>
           <div class="settings-field">
-            <label><span class="field-icon">🌐</span> Language</label>
+            <label id="settingsOutputLanguageLabel"><span class="field-icon">🌐</span> Language</label>
             <select id="settingsOutputLanguage">
               <option value="ja">日本語</option>
               <option value="en">English</option>
             </select>
-            <div class="field-hint">Choose the output language for the agent's final response.</div>
+            <div class="field-hint" id="settingsOutputLanguageHint">Choose the output language for the agent's final response.</div>
           </div>
         </div>
       </div>
@@ -1820,23 +1820,23 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <div class="settings-tab-content" id="settingsTab-auth">
         <div class="settings-section">
           <div class="settings-auth-status" id="settingsCopilotAuthStatus" data-state="checking">
-            <div class="settings-auth-status-title">Copilot 認証状態</div>
+            <div class="settings-auth-status-title" id="settingsCopilotAuthStatusTitle">Copilot 認証状態</div>
             <div class="settings-auth-status-state" id="settingsCopilotAuthStatusState">確認中</div>
             <div class="settings-auth-status-message" id="settingsCopilotAuthStatusMessage">GitHub Copilot 認証状態を確認しています。</div>
             <div class="settings-auth-status-meta" id="settingsCopilotAuthStatusMeta"></div>
             <div class="settings-auth-status-actions">
-              <button class="btn-cancel" type="button" onclick="refreshCopilotAuthStatus(true)">再確認</button>
+              <button class="btn-cancel" id="settingsCopilotAuthRefresh" type="button" onclick="refreshCopilotAuthStatus(true)">再確認</button>
             </div>
           </div>
           <div class="settings-field">
-            <label><span class="field-icon">🐙</span> GitHub Token</label>
+            <label id="settingsGithubTokenLabel"><span class="field-icon">🐙</span> GitHub Token</label>
             <input type="password" id="settingsGithubToken" placeholder="ghp_xxxxxxxxxxxx">
-            <div class="field-hint">Personal Access Token or Fine-Grained Token for Copilot CLI</div>
+            <div class="field-hint" id="settingsGithubTokenHint">Personal Access Token or Fine-Grained Token for Copilot CLI</div>
           </div>
           <div class="settings-field">
-            <label><span class="field-icon">🧠</span> Copilot Model</label>
+            <label id="settingsCopilotModelLabel"><span class="field-icon">🧠</span> Copilot Model</label>
             <select id="settingsCopilotModel">
-              <option value="">Default (auto)</option>
+              <option id="settingsCopilotModelDefaultOption" value="">Default (auto)</option>
               <option value="claude-sonnet-4.6">Claude Sonnet 4.6</option>
               <option value="claude-sonnet-4.5">Claude Sonnet 4.5</option>
               <option value="claude-sonnet-4">Claude Sonnet 4</option>
@@ -1850,19 +1850,19 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
               <option value="gpt-4.1">GPT-4.1</option>
               <option value="gemini-3-pro-preview">Gemini 3 Pro</option>
             </select>
-            <div class="field-hint">Model used by Copilot CLI (copilot --model)</div>
+            <div class="field-hint" id="settingsCopilotModelHint">Model used by Copilot CLI (copilot --model)</div>
           </div>
           <div class="settings-field">
-            <label><span class="field-icon">🔧</span> GitHub MCP Tools</label>
+            <label id="settingsGithubMcpToolsLabel"><span class="field-icon">🔧</span> GitHub MCP Tools</label>
             <select id="settingsGithubMcpTools">
-              <option value="">Disabled</option>
-              <option value="all">All Tools</option>
-              <option value="repos,issues,pull_requests">Repos + Issues + PRs</option>
-              <option value="repos">Repos only</option>
-              <option value="issues">Issues only</option>
-              <option value="pull_requests">Pull Requests only</option>
+              <option id="settingsGithubMcpToolsDisabledOption" value="">Disabled</option>
+              <option id="settingsGithubMcpToolsAllOption" value="all">All Tools</option>
+              <option id="settingsGithubMcpToolsReposIssuesPrsOption" value="repos,issues,pull_requests">Repos + Issues + PRs</option>
+              <option id="settingsGithubMcpToolsReposOption" value="repos">Repos only</option>
+              <option id="settingsGithubMcpToolsIssuesOption" value="issues">Issues only</option>
+              <option id="settingsGithubMcpToolsPullRequestsOption" value="pull_requests">Pull Requests only</option>
             </select>
-            <div class="field-hint">GitHub MCP server tools available to Copilot agent (search, issues, PRs)</div>
+            <div class="field-hint" id="settingsGithubMcpToolsHint">GitHub MCP server tools available to Copilot agent (search, issues, PRs)</div>
           </div>
         </div>
       </div>
@@ -1871,7 +1871,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <div class="settings-tab-content" id="settingsTab-stt">
         <div class="settings-section">
           <div class="provider-select-field">
-            <label><span class="field-icon">🎙️</span> Provider</label>
+            <label id="settingsProviderLabel"><span class="field-icon">🎙️</span> Provider</label>
             <select id="sttProviderSelect" onchange="selectProvider(this.value)">
               <option value="openai">OpenAI Whisper</option>
               <option value="azure">Azure OpenAI</option>
@@ -1880,30 +1880,30 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
           </div>
           <div id="openaiFields">
             <div class="settings-field">
-              <label><span class="field-icon">🔑</span> API Key</label>
+              <label id="settingsOpenaiKeyLabel"><span class="field-icon">🔑</span> API Key</label>
               <input type="password" id="settingsOpenaiKey" placeholder="sk-xxxxxxxxxxxx">
             </div>
           </div>
           <div id="azureFields" style="display:none">
             <div class="settings-field">
-              <label><span class="field-icon">🔑</span> API Key</label>
+              <label id="settingsAzureKeyLabel"><span class="field-icon">🔑</span> API Key</label>
               <input type="password" id="settingsAzureKey" placeholder="xxxxxxxxxxxxxxxx">
             </div>
             <div class="settings-field">
-              <label><span class="field-icon">🌐</span> Endpoint</label>
+              <label id="settingsAzureEndpointLabel"><span class="field-icon">🌐</span> Endpoint</label>
               <input type="text" id="settingsAzureEndpoint" placeholder="https://your-resource.openai.azure.com">
             </div>
           </div>
           <div id="ollamaFields" style="display:none">
             <div class="settings-field">
-              <label><span class="field-icon">🌐</span> Ollama URL</label>
+              <label id="settingsOllamaUrlLabel"><span class="field-icon">🌐</span> Ollama URL</label>
               <input type="text" id="settingsOllamaUrl" placeholder="http://localhost:11434" value="http://localhost:11434">
-              <div class="field-hint">Ollama server address (default: http://localhost:11434)</div>
+              <div class="field-hint" id="settingsOllamaUrlHint">Ollama server address (default: http://localhost:11434)</div>
             </div>
             <div class="settings-field">
-              <label><span class="field-icon">🧠</span> Model</label>
+              <label id="settingsOllamaModelLabel"><span class="field-icon">🧠</span> Model</label>
               <input type="text" id="settingsOllamaModel" placeholder="llama3.3">
-              <div class="field-hint">Model name (e.g. llama3.3, qwen2.5, deepseek-r1, gemma3)</div>
+              <div class="field-hint" id="settingsOllamaModelHint">Model name (e.g. llama3.3, qwen2.5, deepseek-r1, gemma3)</div>
             </div>
           </div>
         </div>
@@ -1913,30 +1913,30 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <div class="settings-tab-content" id="settingsTab-skills">
         <div class="settings-section">
           <div class="skill-actions">
-            <button class="btn-skill-action" onclick="showNewSkillForm()">+ New Skill</button>
+            <button class="btn-skill-action" id="settingsNewSkillButton" onclick="showNewSkillForm()">+ New Skill</button>
             <label class="btn-skill-action upload-label">
-              📤 Upload ZIP
+              <span id="settingsUploadSkillLabelText">📤 Upload ZIP</span>
               <input type="file" id="skillUploadInput" accept=".zip" style="display:none" onchange="uploadSkillZip(this)">
             </label>
             <button class="btn-skill-action" onclick="scanAllSkills()" id="scanAllBtn">🔍 Scan All</button>
           </div>
-          <div class="field-hint" style="margin-bottom:12px">Skills are directories containing SKILL.md and optional supporting files. Upload as ZIP.</div>
+          <div class="field-hint" id="settingsSkillsHint" style="margin-bottom:12px">Skills are directories containing SKILL.md and optional supporting files. Upload as ZIP.</div>
           <div id="newSkillForm" class="new-skill-form" style="display:none">
             <div class="settings-field">
-              <label>Skill Name</label>
+              <label id="settingsNewSkillNameLabel">Skill Name</label>
               <input type="text" id="newSkillName" placeholder="my-skill (alphanumeric, hyphens)">
             </div>
             <div class="settings-field">
-              <label>Description</label>
+              <label id="settingsNewSkillDescLabel">Description</label>
               <input type="text" id="newSkillDesc" placeholder="What this skill does">
             </div>
             <div class="settings-field">
-              <label>Instructions</label>
+              <label id="settingsNewSkillInstructionsLabel">Instructions</label>
               <textarea id="newSkillContent" rows="4" placeholder="You are a helpful AI assistant that..."></textarea>
             </div>
             <div class="skill-form-actions">
-              <button class="btn-cancel" onclick="hideNewSkillForm()">Cancel</button>
-              <button class="btn-primary" onclick="createNewSkill()">Create</button>
+              <button class="btn-cancel" id="settingsNewSkillCancelButton" onclick="hideNewSkillForm()">Cancel</button>
+              <button class="btn-primary" id="settingsNewSkillCreateButton" onclick="createNewSkill()">Create</button>
             </div>
           </div>
           <div id="skillList" class="skill-list"></div>
@@ -1945,10 +1945,10 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
           <div class="marketplace-section">
             <div class="marketplace-header">
               <div>
-                <div class="marketplace-title">Marketplace Import</div>
-                <div class="field-hint">Import official skill packs from nahisaho/coreclaw-marketplace.</div>
+                <div class="marketplace-title" id="settingsMarketplaceTitle">Marketplace Import</div>
+                <div class="field-hint" id="settingsMarketplaceHint">Import official skill packs from nahisaho/coreclaw-marketplace.</div>
               </div>
-              <button class="btn-skill-action" onclick="refreshMarketplaceSkills(this)">🔄 Refresh Marketplace</button>
+              <button class="btn-skill-action" id="settingsRefreshMarketplaceButton" onclick="refreshMarketplaceSkills(this)">🔄 Refresh Marketplace</button>
             </div>
             <div class="marketplace-search">
               <input type="text" id="marketplaceSearchInput" placeholder="Search marketplace skills by name or description" oninput="filterMarketplaceSkills(this.value)">
@@ -1963,7 +1963,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <div class="settings-tab-content" id="settingsTab-github">
         <div class="settings-section">
           <div class="settings-field">
-            <label><span class="field-icon">👤</span> GitHub Username</label>
+            <label id="settingsGithubUserLabel"><span class="field-icon">👤</span> GitHub Username</label>
             <input type="text" id="settingsGithubUser" placeholder="your-username">
           </div>
 
@@ -1975,9 +1975,9 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
         <div class="settings-section">
           <div id="mcpServerList"></div>
           <div class="mcp-add-row">
-            <button class="btn-add-mcp" onclick="addMcpServerRow()">+ Add MCP Server</button>
-            <button class="btn-add-mcp" onclick="addToolUniverse()" style="margin-left:8px" title="Add ToolUniverse (1000+ scientific tools)">+ ToolUniverse</button>
-            <button class="btn-add-mcp" onclick="addDeepResearch()" style="margin-left:8px" title="Add Deep Research (comprehensive research reports)">+ Deep Research</button>
+            <button class="btn-add-mcp" id="settingsAddMcpServerButton" onclick="addMcpServerRow()">+ Add MCP Server</button>
+            <button class="btn-add-mcp" id="settingsAddToolUniverseButton" onclick="addToolUniverse()" style="margin-left:8px" title="Add ToolUniverse (1000+ scientific tools)">+ ToolUniverse</button>
+            <button class="btn-add-mcp" id="settingsAddDeepResearchButton" onclick="addDeepResearch()" style="margin-left:8px" title="Add Deep Research (comprehensive research reports)">+ Deep Research</button>
           </div>
         </div>
       </div>
@@ -1993,11 +1993,11 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 
     <div class="modal-actions">
       <span class="settings-saved" id="settingsSaved">✓ Saved</span>
-      <button class="btn-cancel" onclick="exportSettings()" title="設定をJSONファイルとしてエクスポート">📤 Export</button>
-      <button class="btn-cancel" onclick="document.getElementById('settingsImportInput').click()" title="設定をJSONファイルからインポート">📥 Import</button>
+      <button class="btn-cancel" id="settingsExportButton" onclick="exportSettings()" title="設定をJSONファイルとしてエクスポート">📤 Export</button>
+      <button class="btn-cancel" id="settingsImportButton" onclick="document.getElementById('settingsImportInput').click()" title="設定をJSONファイルからインポート">📥 Import</button>
       <input type="file" id="settingsImportInput" accept=".json" style="display:none" onchange="importSettings(event)">
-      <button class="btn-cancel" onclick="closeModal('settingsModal')">Cancel</button>
-      <button class="btn-primary" onclick="saveSettings()">Save</button>
+      <button class="btn-cancel" id="settingsCancelButton" onclick="closeModal('settingsModal')">Cancel</button>
+      <button class="btn-primary" id="settingsSaveButton" onclick="saveSettings()">Save</button>
     </div>
   </div>
 </div>
@@ -2121,14 +2121,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 <div class="modal-overlay" id="benchmarkPromptSelectorModal" onclick="if(event.target===this)closeModal('benchmarkPromptSelectorModal')">
   <div class="modal benchmark-runs-modal">
     <div class="modal-header">
-      <h3>📊 Benchmark Prompt Selector</h3>
+      <h3>📊 Benchmark Target Selector</h3>
       <button class="modal-close" onclick="closeModal('benchmarkPromptSelectorModal')" title="Close">✕</button>
     </div>
-    <div class="benchmark-runs-summary">Load a canonical benchmark prompt without modifying its text.</div>
+    <div class="benchmark-runs-summary">Use the prompt you are about to run, and choose which benchmark definition should evaluate it.</div>
     <div class="benchmark-selector-list" id="benchmarkPromptSelectorList"></div>
     <div class="modal-actions">
       <button class="btn-cancel" onclick="closeModal('benchmarkPromptSelectorModal')">Cancel</button>
-      <button class="btn-primary" onclick="applySelectedBenchmarkPrompt()">Load Prompt</button>
+      <button class="btn-primary" onclick="applySelectedBenchmarkPrompt()">Use for Benchmark</button>
     </div>
   </div>
 </div>
@@ -2221,6 +2221,7 @@ function updateActivityLogControls() {
 
 function applyOutputLanguagePreference(language) {
   currentOutputLanguage = language === 'en' ? 'en' : 'ja';
+  updateSettingsModalLanguage();
   updateActivityLogControls();
 
   for (const [taskId, task] of Object.entries(activeTasks)) {
@@ -2239,14 +2240,196 @@ function applyOutputLanguagePreference(language) {
   }
 }
 
+function updateSettingsModalLanguage() {
+  const modalTitle = document.getElementById('settingsModalTitle');
+  if (modalTitle) modalTitle.textContent = outputLanguageText('⚙️ 設定', '⚙️ Settings');
+
+  const modalClose = document.getElementById('settingsModalClose');
+  if (modalClose) modalClose.title = outputLanguageText('閉じる (Esc)', 'Close (Esc)');
+
+  const generalTab = document.getElementById('settingsTabButtonGeneral');
+  if (generalTab) generalTab.textContent = outputLanguageText('一般', 'General');
+
+  const authTab = document.getElementById('settingsTabButtonAuth');
+  if (authTab) authTab.textContent = outputLanguageText('認証', 'Authentication');
+
+  const sttTab = document.getElementById('settingsTabButtonStt');
+  if (sttTab) sttTab.textContent = outputLanguageText('音声入力', 'STT Provider');
+
+  const skillsTab = document.getElementById('settingsTabButtonSkills');
+  if (skillsTab) skillsTab.textContent = outputLanguageText('スキル', 'Skills');
+
+  const githubTab = document.getElementById('settingsTabButtonGithub');
+  if (githubTab) githubTab.textContent = 'GitHub';
+
+  const mcpTab = document.getElementById('settingsTabButtonMcp');
+  if (mcpTab) mcpTab.textContent = outputLanguageText('MCP サーバー', 'MCP Servers');
+
+  const updatesTab = document.getElementById('settingsTabButtonUpdates');
+  if (updatesTab) updatesTab.textContent = outputLanguageText('更新', 'Updates');
+
+  const viewModeHeading = document.getElementById('settingsViewModeHeading');
+  if (viewModeHeading) viewModeHeading.textContent = outputLanguageText('🎨 表示モード', '🎨 View Mode');
+
+  const lightButton = document.getElementById('themeLight');
+  if (lightButton) lightButton.textContent = outputLanguageText('☀️ ライト', '☀️ Light');
+
+  const darkButton = document.getElementById('themeDark');
+  if (darkButton) darkButton.textContent = outputLanguageText('🌙 ダーク', '🌙 Dark');
+
+  const languageHeading = document.getElementById('settingsOutputLanguageHeading');
+  if (languageHeading) languageHeading.textContent = outputLanguageText('🗣 出力言語', '🗣 Output Language');
+
+  const languageLabel = document.getElementById('settingsOutputLanguageLabel');
+  if (languageLabel) {
+    languageLabel.innerHTML = `<span class="field-icon">🌐</span>${esc(outputLanguageText('言語', 'Language'))}`;
+  }
+
+  const languageHint = document.getElementById('settingsOutputLanguageHint');
+  if (languageHint) {
+    languageHint.textContent = outputLanguageText(
+      'エージェントの最終応答に使う言語を選択します。',
+      'Choose the output language for the agent\'s final response.',
+    );
+  }
+
+  const refreshAuthButton = document.getElementById('settingsCopilotAuthRefresh');
+  if (refreshAuthButton) refreshAuthButton.textContent = outputLanguageText('再確認', 'Refresh');
+
+  const authStatusTitle = document.getElementById('settingsCopilotAuthStatusTitle');
+  if (authStatusTitle) authStatusTitle.textContent = outputLanguageText('Copilot 認証状態', 'Copilot Authentication');
+
+  const githubTokenLabel = document.getElementById('settingsGithubTokenLabel');
+  if (githubTokenLabel) githubTokenLabel.innerHTML = `<span class="field-icon">🐙</span>${esc(outputLanguageText('GitHub Token', 'GitHub Token'))}`;
+
+  const githubTokenHint = document.getElementById('settingsGithubTokenHint');
+  if (githubTokenHint) githubTokenHint.textContent = outputLanguageText('Copilot CLI 用の Personal Access Token または Fine-Grained Token。', 'Personal Access Token or Fine-Grained Token for Copilot CLI');
+
+  const copilotModelLabel = document.getElementById('settingsCopilotModelLabel');
+  if (copilotModelLabel) copilotModelLabel.innerHTML = `<span class="field-icon">🧠</span>${esc(outputLanguageText('Copilot モデル', 'Copilot Model'))}`;
+
+  const copilotModelDefaultOption = document.getElementById('settingsCopilotModelDefaultOption');
+  if (copilotModelDefaultOption) copilotModelDefaultOption.textContent = outputLanguageText('既定値 (自動)', 'Default (auto)');
+
+  const copilotModelHint = document.getElementById('settingsCopilotModelHint');
+  if (copilotModelHint) copilotModelHint.textContent = outputLanguageText('Copilot CLI が使用するモデルです。', 'Model used by Copilot CLI (copilot --model)');
+
+  const githubMcpToolsLabel = document.getElementById('settingsGithubMcpToolsLabel');
+  if (githubMcpToolsLabel) githubMcpToolsLabel.innerHTML = `<span class="field-icon">🔧</span>${esc(outputLanguageText('GitHub MCP ツール', 'GitHub MCP Tools'))}`;
+
+  const mcpDisabled = document.getElementById('settingsGithubMcpToolsDisabledOption');
+  if (mcpDisabled) mcpDisabled.textContent = outputLanguageText('無効', 'Disabled');
+  const mcpAll = document.getElementById('settingsGithubMcpToolsAllOption');
+  if (mcpAll) mcpAll.textContent = outputLanguageText('すべてのツール', 'All Tools');
+  const mcpReposIssuesPrs = document.getElementById('settingsGithubMcpToolsReposIssuesPrsOption');
+  if (mcpReposIssuesPrs) mcpReposIssuesPrs.textContent = outputLanguageText('Repos + Issues + PRs', 'Repos + Issues + PRs');
+  const mcpRepos = document.getElementById('settingsGithubMcpToolsReposOption');
+  if (mcpRepos) mcpRepos.textContent = outputLanguageText('Repos のみ', 'Repos only');
+  const mcpIssues = document.getElementById('settingsGithubMcpToolsIssuesOption');
+  if (mcpIssues) mcpIssues.textContent = outputLanguageText('Issues のみ', 'Issues only');
+  const mcpPulls = document.getElementById('settingsGithubMcpToolsPullRequestsOption');
+  if (mcpPulls) mcpPulls.textContent = outputLanguageText('Pull Requests のみ', 'Pull Requests only');
+
+  const githubMcpToolsHint = document.getElementById('settingsGithubMcpToolsHint');
+  if (githubMcpToolsHint) githubMcpToolsHint.textContent = outputLanguageText('Copilot エージェントが利用できる GitHub MCP サーバーのツールです。', 'GitHub MCP server tools available to Copilot agent (search, issues, PRs)');
+
+  const providerLabel = document.getElementById('settingsProviderLabel');
+  if (providerLabel) providerLabel.innerHTML = `<span class="field-icon">🎙️</span>${esc(outputLanguageText('プロバイダー', 'Provider'))}`;
+
+  const openaiKeyLabel = document.getElementById('settingsOpenaiKeyLabel');
+  if (openaiKeyLabel) openaiKeyLabel.innerHTML = `<span class="field-icon">🔑</span>${esc(outputLanguageText('API キー', 'API Key'))}`;
+  const azureKeyLabel = document.getElementById('settingsAzureKeyLabel');
+  if (azureKeyLabel) azureKeyLabel.innerHTML = `<span class="field-icon">🔑</span>${esc(outputLanguageText('API キー', 'API Key'))}`;
+  const azureEndpointLabel = document.getElementById('settingsAzureEndpointLabel');
+  if (azureEndpointLabel) azureEndpointLabel.innerHTML = `<span class="field-icon">🌐</span>${esc(outputLanguageText('エンドポイント', 'Endpoint'))}`;
+  const ollamaUrlLabel = document.getElementById('settingsOllamaUrlLabel');
+  if (ollamaUrlLabel) ollamaUrlLabel.innerHTML = `<span class="field-icon">🌐</span>${esc(outputLanguageText('Ollama URL', 'Ollama URL'))}`;
+  const ollamaUrlHint = document.getElementById('settingsOllamaUrlHint');
+  if (ollamaUrlHint) ollamaUrlHint.textContent = outputLanguageText('Ollama サーバーのアドレスです。', 'Ollama server address (default: http://localhost:11434)');
+  const ollamaModelLabel = document.getElementById('settingsOllamaModelLabel');
+  if (ollamaModelLabel) ollamaModelLabel.innerHTML = `<span class="field-icon">🧠</span>${esc(outputLanguageText('モデル', 'Model'))}`;
+  const ollamaModelHint = document.getElementById('settingsOllamaModelHint');
+  if (ollamaModelHint) ollamaModelHint.textContent = outputLanguageText('モデル名を入力します。例: llama3.3, qwen2.5, deepseek-r1, gemma3', 'Model name (e.g. llama3.3, qwen2.5, deepseek-r1, gemma3)');
+
+  const newSkillButton = document.getElementById('settingsNewSkillButton');
+  if (newSkillButton) newSkillButton.textContent = outputLanguageText('+ 新規スキル', '+ New Skill');
+  const uploadSkillLabel = document.getElementById('settingsUploadSkillLabelText');
+  if (uploadSkillLabel) uploadSkillLabel.textContent = outputLanguageText('📤 ZIP をアップロード', '📤 Upload ZIP');
+  const scanAllButton = document.getElementById('scanAllBtn');
+  if (scanAllButton && !scanAllButton.disabled) scanAllButton.textContent = outputLanguageText('🔍 すべてスキャン', '🔍 Scan All');
+  const skillsHint = document.getElementById('settingsSkillsHint');
+  if (skillsHint) skillsHint.textContent = outputLanguageText('スキルは SKILL.md と任意の補助ファイルを含むディレクトリです。ZIP でアップロードできます。', 'Skills are directories containing SKILL.md and optional supporting files. Upload as ZIP.');
+  const newSkillNameLabel = document.getElementById('settingsNewSkillNameLabel');
+  if (newSkillNameLabel) newSkillNameLabel.textContent = outputLanguageText('スキル名', 'Skill Name');
+  const newSkillName = document.getElementById('newSkillName');
+  if (newSkillName) newSkillName.placeholder = outputLanguageText('my-skill 半角英数とハイフン', 'my-skill (alphanumeric, hyphens)');
+  const newSkillDescLabel = document.getElementById('settingsNewSkillDescLabel');
+  if (newSkillDescLabel) newSkillDescLabel.textContent = outputLanguageText('説明', 'Description');
+  const newSkillDesc = document.getElementById('newSkillDesc');
+  if (newSkillDesc) newSkillDesc.placeholder = outputLanguageText('このスキルでできること', 'What this skill does');
+  const newSkillInstructionsLabel = document.getElementById('settingsNewSkillInstructionsLabel');
+  if (newSkillInstructionsLabel) newSkillInstructionsLabel.textContent = outputLanguageText('指示', 'Instructions');
+  const newSkillContent = document.getElementById('newSkillContent');
+  if (newSkillContent) newSkillContent.placeholder = outputLanguageText('あなたは役に立つ AI アシスタントです...', 'You are a helpful AI assistant that...');
+  const newSkillCancel = document.getElementById('settingsNewSkillCancelButton');
+  if (newSkillCancel) newSkillCancel.textContent = outputLanguageText('キャンセル', 'Cancel');
+  const newSkillCreate = document.getElementById('settingsNewSkillCreateButton');
+  if (newSkillCreate) newSkillCreate.textContent = outputLanguageText('作成', 'Create');
+  const skillEmpty = document.getElementById('skillEmpty');
+  if (skillEmpty) skillEmpty.textContent = outputLanguageText('スキルはありません。', 'No skills found.');
+  const marketplaceTitle = document.getElementById('settingsMarketplaceTitle');
+  if (marketplaceTitle) marketplaceTitle.textContent = outputLanguageText('マーケットプレイス取り込み', 'Marketplace Import');
+  const marketplaceHint = document.getElementById('settingsMarketplaceHint');
+  if (marketplaceHint) marketplaceHint.textContent = outputLanguageText('nahisaho/coreclaw-marketplace から公式スキルパックを取り込みます。', 'Import official skill packs from nahisaho/coreclaw-marketplace.');
+  const refreshMarketplaceButton = document.getElementById('settingsRefreshMarketplaceButton');
+  if (refreshMarketplaceButton && !refreshMarketplaceButton.disabled) refreshMarketplaceButton.textContent = outputLanguageText('🔄 マーケットプレイスを更新', '🔄 Refresh Marketplace');
+  const marketplaceSearchInput = document.getElementById('marketplaceSearchInput');
+  if (marketplaceSearchInput) marketplaceSearchInput.placeholder = outputLanguageText('名前または説明でマーケットプレイススキルを検索', 'Search marketplace skills by name or description');
+  const marketplaceEmpty = document.getElementById('marketplaceSkillEmpty');
+  if (marketplaceEmpty && !marketplaceEmpty.dataset.dynamicMessage) marketplaceEmpty.textContent = outputLanguageText('マーケットプレイススキルを読み込み中...', 'Loading marketplace skills...');
+
+  const githubUserLabel = document.getElementById('settingsGithubUserLabel');
+  if (githubUserLabel) githubUserLabel.innerHTML = `<span class="field-icon">👤</span>${esc(outputLanguageText('GitHub ユーザー名', 'GitHub Username'))}`;
+
+  const addMcpServerButton = document.getElementById('settingsAddMcpServerButton');
+  if (addMcpServerButton) addMcpServerButton.textContent = outputLanguageText('+ MCP サーバーを追加', '+ Add MCP Server');
+  const addToolUniverseButton = document.getElementById('settingsAddToolUniverseButton');
+  if (addToolUniverseButton) {
+    addToolUniverseButton.textContent = outputLanguageText('+ ToolUniverse', '+ ToolUniverse');
+    addToolUniverseButton.title = outputLanguageText('ToolUniverse を追加します', 'Add ToolUniverse (1000+ scientific tools)');
+  }
+  const addDeepResearchButton = document.getElementById('settingsAddDeepResearchButton');
+  if (addDeepResearchButton) {
+    addDeepResearchButton.textContent = outputLanguageText('+ Deep Research', '+ Deep Research');
+    addDeepResearchButton.title = outputLanguageText('Deep Research を追加します', 'Add Deep Research (comprehensive research reports)');
+  }
+
+  const settingsSaved = document.getElementById('settingsSaved');
+  if (settingsSaved) settingsSaved.textContent = outputLanguageText('✓ 保存しました', '✓ Saved');
+  const exportButton = document.getElementById('settingsExportButton');
+  if (exportButton) {
+    exportButton.textContent = outputLanguageText('📤 エクスポート', '📤 Export');
+    exportButton.title = outputLanguageText('設定をJSONファイルとしてエクスポート', 'Export settings as a JSON file');
+  }
+  const importButton = document.getElementById('settingsImportButton');
+  if (importButton) {
+    importButton.textContent = outputLanguageText('📥 インポート', '📥 Import');
+    importButton.title = outputLanguageText('設定をJSONファイルからインポート', 'Import settings from a JSON file');
+  }
+  const cancelButton = document.getElementById('settingsCancelButton');
+  if (cancelButton) cancelButton.textContent = outputLanguageText('キャンセル', 'Cancel');
+  const saveButton = document.getElementById('settingsSaveButton');
+  if (saveButton) saveButton.textContent = outputLanguageText('保存', 'Save');
+}
+
 function getCopilotAuthStateLabel(status) {
   switch (status.state) {
-    case 'authenticated': return '有効';
-    case 'missing': return '未設定';
-    case 'invalid': return '無効';
-    case 'unauthorized': return '要確認';
-    case 'error': return '確認失敗';
-    default: return '確認中';
+    case 'authenticated': return outputLanguageText('有効', 'Enabled');
+    case 'missing': return outputLanguageText('未設定', 'Not set');
+    case 'invalid': return outputLanguageText('無効', 'Invalid');
+    case 'unauthorized': return outputLanguageText('要確認', 'Check required');
+    case 'error': return outputLanguageText('確認失敗', 'Check failed');
+    default: return outputLanguageText('確認中', 'Checking');
   }
 }
 
@@ -2264,9 +2447,9 @@ function getCopilotAuthSidebarStateLabel(status) {
 function getCopilotAuthSourceLabel(source) {
   switch (source) {
     case 'settings': return 'Settings';
-    case 'env': return '環境変数';
+    case 'env': return outputLanguageText('環境変数', 'Environment');
     case 'gh': return 'gh auth';
-    default: return '未検出';
+    default: return outputLanguageText('未検出', 'Not detected');
   }
 }
 
@@ -2275,7 +2458,7 @@ function updateCopilotAuthStatusUi() {
     ok: false,
     state: 'checking',
     source: 'none',
-    message: 'GitHub Copilot 認証状態を確認しています。',
+    message: outputLanguageText('GitHub Copilot 認証状態を確認しています。', 'Checking GitHub Copilot authentication.'),
   };
   const stateLabel = getCopilotAuthStateLabel(status);
   const sidebarStateLabel = getCopilotAuthSidebarStateLabel(status);
@@ -2296,9 +2479,9 @@ function updateCopilotAuthStatusUi() {
     document.getElementById('settingsCopilotAuthStatusState').textContent = stateLabel;
     document.getElementById('settingsCopilotAuthStatusMessage').textContent = statusMessage;
     const meta = [];
-    meta.push(`取得元: ${sourceLabel}`);
-    if (status.checkedAt) meta.push(`確認時刻: ${new Date(status.checkedAt).toLocaleString()}`);
-    if (status.detail) meta.push(`詳細: ${status.detail}`);
+    meta.push(`${outputLanguageText('取得元', 'Source')}: ${sourceLabel}`);
+    if (status.checkedAt) meta.push(`${outputLanguageText('確認時刻', 'Checked at')}: ${new Date(status.checkedAt).toLocaleString()}`);
+    if (status.detail) meta.push(`${outputLanguageText('詳細', 'Detail')}: ${status.detail}`);
     document.getElementById('settingsCopilotAuthStatusMeta').textContent = meta.join(' / ');
   }
 }
@@ -2309,7 +2492,7 @@ async function refreshCopilotAuthStatus(force = false) {
       ok: false,
       state: 'checking',
       source: 'none',
-      message: 'GitHub Copilot 認証状態を確認しています。',
+      message: outputLanguageText('GitHub Copilot 認証状態を確認しています。', 'Checking GitHub Copilot authentication.'),
     };
     updateCopilotAuthStatusUi();
   }
@@ -2321,7 +2504,7 @@ async function refreshCopilotAuthStatus(force = false) {
       ok: false,
       state: 'error',
       source: 'none',
-      message: 'GitHub 認証状態の取得に失敗しました。',
+      message: outputLanguageText('GitHub 認証状態の取得に失敗しました。', 'Failed to fetch GitHub authentication status.'),
       detail: err.message || String(err),
     };
   }
@@ -2748,16 +2931,24 @@ function toggleSkillImprovementControls(enabled) {
   const note = document.getElementById('skillImprovementNote');
   if (select) select.disabled = !enabled;
   if (note) note.disabled = !enabled;
+  if (enabled && select && !select.value && selectedBenchmarkPromptId) {
+    select.value = selectedBenchmarkPromptId;
+  }
   if (enabled && !cachedBenchmarkDefinitions.length) {
     loadBenchmarkDefinitions();
   }
+}
+
+function syncSelectedBenchmarkTarget(benchmarkId) {
+  selectedBenchmarkPromptId = benchmarkId || '';
+  updateSelectedBenchmarkPromptBadge();
 }
 
 function updateSelectedBenchmarkPromptBadge() {
   const badge = document.getElementById('selectedBenchmarkPromptBadge');
   if (!badge) return;
   const selected = cachedBenchmarkDefinitions.find((benchmark) => benchmark.id === selectedBenchmarkPromptId);
-  badge.textContent = selected ? `Prompt loaded: ${selected.title}` : 'No benchmark prompt loaded';
+  badge.textContent = selected ? `Benchmark target: ${selected.title}` : 'No benchmark target selected';
 }
 
 function renderBenchmarkPromptSelectorModal() {
@@ -2792,19 +2983,10 @@ async function showBenchmarkPromptSelectorModal() {
 function applySelectedBenchmarkPrompt() {
   const benchmark = cachedBenchmarkDefinitions.find((entry) => entry.id === selectedBenchmarkPromptId);
   if (!benchmark) return;
-
-  const input = document.getElementById('chatInput');
-  if (!input) return;
-  if (input.value.trim() && !confirm('Replace the current prompt with the selected benchmark prompt?')) {
-    return;
-  }
-
-  input.value = benchmark.promptText || '';
   const benchmarkSelect = document.getElementById('skillImprovementBenchmarkSelect');
   if (benchmarkSelect && cachedBenchmarkDefinitions.some((entry) => entry.id === benchmark.id)) {
     benchmarkSelect.value = benchmark.id;
   }
-  autoResize(input);
   updateSelectedBenchmarkPromptBadge();
   closeModal('benchmarkPromptSelectorModal');
 }
@@ -4375,6 +4557,7 @@ async function sendMessage() {
     prompt: content,
   });
 
+  const benchmarkId = selectedBenchmarkPromptId || '';
   const skillImprovementEnabled = document.getElementById('recordSkillImprovement')?.checked;
   const skillImprovementBenchmarkId = document.getElementById('skillImprovementBenchmarkSelect')?.value || '';
   const skillImprovementNote = document.getElementById('skillImprovementNote')?.value.trim() || '';
@@ -4383,6 +4566,7 @@ async function sendMessage() {
     type: 'chat',
     experimentId: currentExpId,
     content,
+    benchmarkId: benchmarkId || undefined,
     skillImprovement: skillImprovementEnabled && skillImprovementBenchmarkId
       ? {
           enabled: true,

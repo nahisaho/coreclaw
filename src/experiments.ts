@@ -66,7 +66,7 @@ export interface BenchmarkRunManifest {
   runId: string;
   experimentId: string;
   taskId: string;
-  mode?: 'canonical' | 'skill-improvement';
+  mode?: 'canonical' | 'prompt-run' | 'skill-improvement';
   benchmarkDefinitionId?: string;
   benchmarkDefinitionTitle?: string;
   promptSource: string;

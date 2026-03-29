@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.57] - 2026-03-29
+
+### Changed
+
+- **Benchmark target recording**: これから実行するプロンプトをそのまま使い、選択した benchmark target に紐づけて記録できるようにしました。
+- **Settings modal localization**: Settings モーダルの General を含む主要な固定文言を、出力言語に応じて日本語または英語で表示するようにしました。
+
 ## [0.1.56] - 2026-03-29
 
 ### Changed
