@@ -409,6 +409,30 @@ function hasSkillDefinition(skillDir: string): boolean {
   return listNestedSkillDefinitionPaths(skillDir).length > 0;
 }
 
+function findUploadedSkillRoot(searchRoot: string, expectedName: string): string | null {
+  const queue = [searchRoot];
+  const fallbackMatches: string[] = [];
+
+  while (queue.length > 0) {
+    const currentDir = queue.shift();
+    if (!currentDir) break;
+
+    if (hasSkillDefinition(currentDir)) {
+      if (path.basename(currentDir) === expectedName) {
+        return currentDir;
+      }
+      fallbackMatches.push(currentDir);
+    }
+
+    for (const entry of fs.readdirSync(currentDir, { withFileTypes: true })) {
+      if (!entry.isDirectory() || entry.name.startsWith('.')) continue;
+      queue.push(path.join(currentDir, entry.name));
+    }
+  }
+
+  return fallbackMatches[0] || null;
+}
+
 // ---------------------------------------------------------------------------
 // ZIP file builder (minimal, no dependencies)
 // ---------------------------------------------------------------------------
@@ -1609,13 +1633,14 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       fs.writeFileSync(zipPath, bodyBuf);
       try {
         execSync(`unzip -o -q "${zipPath}" -d "${tmpDir}/extracted"`, { timeout: 30000 });
-        // Find the root: if ZIP contains a single top-level folder, use its contents
+        // Find the root: if ZIP contains a single top-level folder, use its contents.
         const extracted = path.join(tmpDir, 'extracted');
         const entries = fs.readdirSync(extracted).filter(e => !e.startsWith('.'));
         let srcDir = extracted;
         if (entries.length === 1 && fs.statSync(path.join(extracted, entries[0])).isDirectory()) {
           srcDir = path.join(extracted, entries[0]);
         }
+        srcDir = findUploadedSkillRoot(srcDir, name) || srcDir;
         // Accept either a root SKILL.md or nested skills/<subskill>/SKILL.md files.
         if (!hasSkillDefinition(srcDir)) {
           fs.rmSync(tmpDir, { recursive: true, force: true });

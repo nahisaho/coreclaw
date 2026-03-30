@@ -1956,6 +1956,52 @@ test.describe('REST API', () => {
     }
   });
 
+  test('PUT /api/skills accepts nested package ZIP uploads inside wrapper directories', async ({ request }) => {
+    const skillName = `zip-wrapper-${Date.now()}`;
+    const subskillName = `${skillName}-subskill`;
+    const uploadedSkillDir = path.join(process.cwd(), 'skills', skillName);
+    const zipBuffer = buildZipBuffer([
+      {
+        name: `coreclaw-marketplace-main/coreclaw-skills-hub/skills/${skillName}/group.json`,
+        data: JSON.stringify({
+          name: skillName,
+          description: 'Wrapped ZIP package test skill',
+        }, null, 2),
+      },
+      {
+        name: `coreclaw-marketplace-main/coreclaw-skills-hub/skills/${skillName}/skills/${subskillName}/SKILL.md`,
+        data: `---\nname: ${subskillName}\nversion: v3.0.0\n---\n\n# ${subskillName}\n`,
+      },
+    ]);
+
+    try {
+      const uploadRes = await request.put(`/api/skills/${skillName}`, {
+        headers: {
+          'content-type': 'application/zip',
+        },
+        data: zipBuffer,
+      });
+
+      expect(uploadRes.ok()).toBeTruthy();
+      expect(await uploadRes.json()).toEqual(expect.objectContaining({
+        name: skillName,
+        updated: true,
+      }));
+
+      expect(fs.existsSync(path.join(uploadedSkillDir, 'group.json'))).toBe(true);
+      expect(fs.existsSync(path.join(uploadedSkillDir, 'skills', subskillName, 'SKILL.md'))).toBe(true);
+
+      const res = await request.get('/api/skills');
+      expect(res.ok()).toBeTruthy();
+      const body = await res.json();
+      const uploadedSkill = body.find((skill: { name?: string }) => skill.name === skillName);
+      expect(uploadedSkill).toBeTruthy();
+      expect(uploadedSkill.version).toBe('v3.0.0');
+    } finally {
+      fs.rmSync(uploadedSkillDir, { recursive: true, force: true });
+    }
+  });
+
   test('GET /api/skills prefers marketplace import version for imported skills', async ({ request }) => {
     const skillName = `marketplace-version-${Date.now()}`;
     const skillDir = path.join(process.cwd(), 'skills', skillName);
