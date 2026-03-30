@@ -8,6 +8,7 @@ import os from 'os';
 import path from 'path';
 import { spawnSync } from 'child_process';
 
+import { resolveGitHubToken } from './github-auth.js';
 import { logger } from './logger.js';
 
 const OFFICIAL_MARKETPLACE_REPO_URL = 'https://github.com/nahisaho/coreclaw-marketplace';
@@ -110,6 +111,32 @@ function getGithubContentsApiBase(repoUrl: string): string {
 
 function getGithubCloneUrl(repoUrl: string): string {
   return `${normalizeGithubRepoUrl(repoUrl)}.git`;
+}
+
+function buildGithubRequestHeaders(): Record<string, string> {
+  const headers: Record<string, string> = {
+    Accept: 'application/vnd.github+json',
+    'User-Agent': 'CoreClaw',
+    'X-GitHub-Api-Version': '2022-11-28',
+  };
+
+  const { token } = resolveGitHubToken();
+  if (token) {
+    headers.Authorization = `Bearer ${token}`;
+  }
+
+  return headers;
+}
+
+function buildAuthenticatedGithubCloneUrl(repoUrl: string): string {
+  const normalizedUrl = getGithubCloneUrl(repoUrl);
+  const { token } = resolveGitHubToken();
+  if (!token) {
+    return normalizedUrl;
+  }
+
+  const encodedToken = encodeURIComponent(token);
+  return normalizedUrl.replace('https://github.com/', `https://x-access-token:${encodedToken}@github.com/`);
 }
 
 export function getCustomMarketplaceSource(repoUrl: string): MarketplaceSourceConfig {
@@ -256,10 +283,7 @@ function sanitizeSkillName(skillName: string): string {
 
 async function fetchMarketplaceJson<T>(url: string, fetchImpl: typeof fetch): Promise<T> {
   const res = await fetchImpl(url, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'CoreClaw',
-    },
+    headers: buildGithubRequestHeaders(),
   });
   if (!res.ok) {
     throw new Error(`Marketplace request failed: ${res.status}`);
@@ -269,10 +293,7 @@ async function fetchMarketplaceJson<T>(url: string, fetchImpl: typeof fetch): Pr
 
 async function fetchMarketplaceFileJson<T>(url: string, fetchImpl: typeof fetch): Promise<T> {
   const res = await fetchImpl(url, {
-    headers: {
-      Accept: 'application/vnd.github+json',
-      'User-Agent': 'CoreClaw',
-    },
+    headers: buildGithubRequestHeaders(),
   });
   if (!res.ok) {
     throw new Error(`Marketplace request failed: ${res.status}`);
@@ -402,7 +423,7 @@ export function importMarketplaceSkillGroup(
   const repoDir = path.join(tempDir, 'repo');
 
   try {
-    const clone = spawnSync('git', ['clone', '--depth', '1', getGithubCloneUrl(source.repoUrl), repoDir], {
+    const clone = spawnSync('git', ['clone', '--depth', '1', buildAuthenticatedGithubCloneUrl(source.repoUrl), repoDir], {
       encoding: 'utf-8',
       timeout: 120000,
     });

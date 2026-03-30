@@ -355,10 +355,40 @@ function resolveMarketplaceSources(settings = loadSettings()): {
   return { sources, sourceStates };
 }
 
+async function listMarketplaceSkillGroupsBySource(settings = loadSettings()): Promise<{
+  groups: MarketplaceSkillGroup[];
+  sourceStates: MarketplaceSourceState[];
+}> {
+  const { sources, sourceStates } = resolveMarketplaceSources(settings);
+  const groups: MarketplaceSkillGroup[] = [];
+
+  await Promise.all(sources.map(async (source) => {
+    try {
+      groups.push(...await listMarketplaceSkillGroups(source));
+    } catch (err) {
+      logger.warn({ source: source.id, repoUrl: source.repoUrl, err }, 'Failed to load marketplace source');
+      const sourceState = sourceStates.find((entry) => entry.id === source.id);
+      if (sourceState) {
+        sourceState.enabled = false;
+        sourceState.error = err instanceof Error ? err.message : 'Failed to load marketplace source';
+      }
+    }
+  }));
+
+  return {
+    groups: groups.sort((left, right) => {
+      if (left.sourceLabel !== right.sourceLabel) {
+        return left.sourceLabel.localeCompare(right.sourceLabel);
+      }
+      return left.slug.localeCompare(right.slug);
+    }),
+    sourceStates,
+  };
+}
+
 async function listAllMarketplaceSkillGroups(settings = loadSettings()): Promise<MarketplaceSkillGroup[]> {
-  const { sources } = resolveMarketplaceSources(settings);
-  const groups = await Promise.all(sources.map((source) => listMarketplaceSkillGroups(source)));
-  return groups.flat().sort((left, right) => {
+  const { groups } = await listMarketplaceSkillGroupsBySource(settings);
+  return groups.sort((left, right) => {
     if (left.sourceLabel !== right.sourceLabel) {
       return left.sourceLabel.localeCompare(right.sourceLabel);
     }
@@ -1627,8 +1657,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   if (method === 'GET' && pathname === '/api/skills/marketplace') {
     try {
       const settings = loadSettings();
-      const { sourceStates } = resolveMarketplaceSources(settings);
-      const groups = await listAllMarketplaceSkillGroups(settings);
+      const { groups, sourceStates } = await listMarketplaceSkillGroupsBySource(settings);
       const groupsWithStatus = groups.map((group) => {
         const importMeta = getMarketplaceImportMetadata(group.slug);
         const currentVersion = importMeta?.sourceId === group.sourceId ? importMeta.version || '' : '';

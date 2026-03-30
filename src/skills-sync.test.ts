@@ -16,6 +16,7 @@ import {
 
 describe('skills-sync marketplace helpers', () => {
   const originalCwd = process.cwd();
+  const originalGithubToken = process.env.GITHUB_TOKEN;
   let tempDir = '';
 
   beforeEach(() => {
@@ -26,7 +27,27 @@ describe('skills-sync marketplace helpers', () => {
 
   afterEach(() => {
     process.chdir(originalCwd);
+    if (originalGithubToken === undefined) {
+      delete process.env.GITHUB_TOKEN;
+    } else {
+      process.env.GITHUB_TOKEN = originalGithubToken;
+    }
     fs.rmSync(tempDir, { recursive: true, force: true });
+  });
+
+  it('adds GitHub authorization headers to marketplace API requests when a token is available', async () => {
+    process.env.GITHUB_TOKEN = 'ghp_testtoken123';
+    const seenHeaders: Array<Record<string, string>> = [];
+
+    const fetchMock = (async (_input, init) => {
+      seenHeaders.push((init?.headers || {}) as Record<string, string>);
+      return new Response(JSON.stringify([]), { status: 200 });
+    }) as typeof fetch;
+
+    await listMarketplaceSkillGroups(fetchMock);
+
+    expect(seenHeaders[0]?.Authorization).toBe('Bearer ghp_testtoken123');
+    expect(seenHeaders[0]?.['X-GitHub-Api-Version']).toBe('2022-11-28');
   });
 
   it('lists marketplace skill groups with installed status and metadata', async () => {
