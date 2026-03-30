@@ -67,6 +67,49 @@ function getMarketplaceImportMetadataPath(skillDir: string): string {
   return path.join(skillDir, MARKETPLACE_IMPORT_METADATA_FILE);
 }
 
+function getNestedSkillsRoot(skillDir: string): string {
+  return path.join(skillDir, 'skills');
+}
+
+function listNestedSkillDefinitionPaths(skillDir: string): string[] {
+  const nestedSkillsRoot = getNestedSkillsRoot(skillDir);
+  if (!fs.existsSync(nestedSkillsRoot) || !fs.statSync(nestedSkillsRoot).isDirectory()) {
+    return [];
+  }
+
+  return fs
+    .readdirSync(nestedSkillsRoot)
+    .map((entry) => path.join(nestedSkillsRoot, entry, 'SKILL.md'))
+    .filter((skillPath) => fs.existsSync(skillPath))
+    .sort();
+}
+
+function findCanonicalSkillFile(skillDir: string): string | null {
+  const rootSkillPath = path.join(skillDir, 'SKILL.md');
+  if (fs.existsSync(rootSkillPath)) {
+    return rootSkillPath;
+  }
+
+  return listNestedSkillDefinitionPaths(skillDir)[0] || null;
+}
+
+function isInstallableSkillPackage(skillDir: string): boolean {
+  return findCanonicalSkillFile(skillDir) !== null;
+}
+
+function readMarketplaceGroupMetadata(sourceDir: string): MarketplaceGroupMetadata {
+  const groupJsonPath = path.join(sourceDir, 'group.json');
+  if (!fs.existsSync(groupJsonPath)) {
+    return {};
+  }
+
+  try {
+    return JSON.parse(fs.readFileSync(groupJsonPath, 'utf-8')) as MarketplaceGroupMetadata;
+  } catch {
+    return {};
+  }
+}
+
 /**
  * Copy a directory recursively.
  */
@@ -187,7 +230,7 @@ export async function listMarketplaceSkillGroups(fetchImpl: typeof fetch = fetch
       icon: meta.icon?.trim() || '📦',
       version: skillMeta.version?.trim() || '',
       count: Number.isFinite(meta.count) ? Number(meta.count) : 0,
-      installed: fs.existsSync(path.join(skillsRoot, entry.name, 'SKILL.md')),
+      installed: isInstallableSkillPackage(path.join(skillsRoot, entry.name)),
     } satisfies MarketplaceSkillGroup;
   }));
 
@@ -203,7 +246,7 @@ export function importMarketplaceSkillGroupFromDir(
   if (!safeGroupName) {
     throw new Error('Invalid marketplace skill name');
   }
-  if (!fs.existsSync(path.join(sourceDir, 'SKILL.md'))) {
+  if (!isInstallableSkillPackage(sourceDir)) {
     throw new Error('Marketplace skill package is missing SKILL.md');
   }
 
@@ -290,9 +333,14 @@ export function syncSkillsToGroup(
       if (filterSet && !filterSet.has(skillDir)) continue;
       const srcDir = path.join(localSkillsPath, skillDir);
       if (!fs.statSync(srcDir).isDirectory()) continue;
+      if (!isInstallableSkillPackage(srcDir)) continue;
       const dstDir = path.join(groupSkillsDir, skillDir);
       const srcSkillMd = path.join(srcDir, 'SKILL.md');
-      if (!fs.existsSync(srcSkillMd)) continue;
+      if (!fs.existsSync(srcSkillMd)) {
+        copyDirSync(srcDir, dstDir);
+        synced++;
+        continue;
+      }
       const dstSkillMd = path.join(dstDir, 'SKILL.md');
       if (
         !fs.existsSync(dstSkillMd) ||
@@ -331,10 +379,7 @@ export function listAvailableSkills(): string[] {
     .readdirSync(localSkillsPath)
     .filter((entry) => {
       const entryPath = path.join(localSkillsPath, entry);
-      return (
-        fs.statSync(entryPath).isDirectory() &&
-        fs.existsSync(path.join(entryPath, 'SKILL.md'))
-      );
+      return fs.statSync(entryPath).isDirectory() && isInstallableSkillPackage(entryPath);
     })
     .sort();
 }
@@ -348,18 +393,21 @@ export function getSkillMetadata(
   const localSkillsPath = getLocalSkillsPath();
   if (!localSkillsPath) return null;
 
-  const skillMdPath = path.join(localSkillsPath, skillName, 'SKILL.md');
-  if (!fs.existsSync(skillMdPath)) return null;
+  const skillDir = path.join(localSkillsPath, skillName);
+  const skillMdPath = findCanonicalSkillFile(skillDir);
+  if (!skillMdPath) return null;
 
   const content = fs.readFileSync(skillMdPath, 'utf-8');
   const match = content.match(/^---\n([\s\S]*?)\n---/);
 
   const marketplaceMeta = getMarketplaceImportMetadata(skillName);
+  const skillPackageVersion = readMarketplaceSkillVersion(skillDir);
+  const groupMeta = readMarketplaceGroupMetadata(skillDir);
   if (!match) {
     return {
-      name: skillName,
-      description: '',
-      version: extractSkillVersion(content) || marketplaceMeta?.version || '',
+      name: groupMeta.name?.trim() || skillName,
+      description: groupMeta.description?.trim() || '',
+      version: extractSkillVersion(content) || skillPackageVersion || marketplaceMeta?.version || '',
     };
   }
 
@@ -368,11 +416,11 @@ export function getSkillMetadata(
   const descMatch = frontmatter.match(/^description:\s*\|?\s*\n?([\s\S]*?)$/m);
 
   return {
-    name: nameMatch ? nameMatch[1].trim() : skillName,
+    name: groupMeta.name?.trim() || (nameMatch ? nameMatch[1].trim() : skillName),
     description: descMatch
       ? descMatch[1].trim().replace(/\n\s*/g, ' ')
-      : '',
-    version: extractSkillVersion(content) || marketplaceMeta?.version || '',
+      : (groupMeta.description?.trim() || ''),
+    version: extractSkillVersion(content) || skillPackageVersion || marketplaceMeta?.version || '',
   };
 }
 
@@ -401,5 +449,6 @@ export function isMarketplaceImportedSkill(
   skillsRoot = getSkillsRoot(),
 ): boolean {
   if (getMarketplaceImportMetadata(skillName, skillsRoot)) return true;
-  return fs.existsSync(path.join(skillsRoot, skillName, 'group.json'));
+  const skillDir = path.join(skillsRoot, skillName);
+  return fs.existsSync(path.join(skillDir, 'group.json')) && isInstallableSkillPackage(skillDir);
 }

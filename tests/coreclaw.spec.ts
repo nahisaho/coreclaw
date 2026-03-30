@@ -1838,8 +1838,15 @@ test.describe('REST API', () => {
     const skillName = `marketplace-version-${Date.now()}`;
     const skillDir = path.join(process.cwd(), 'skills', skillName);
 
-    fs.mkdirSync(skillDir, { recursive: true });
-    fs.writeFileSync(path.join(skillDir, 'SKILL.md'), `---\nname: ${skillName}\nversion: v1.0.0\n---\n\n# ${skillName}\n`);
+    fs.mkdirSync(path.join(skillDir, 'skills', `${skillName}-subskill`), { recursive: true });
+    fs.writeFileSync(path.join(skillDir, 'group.json'), JSON.stringify({
+      name: skillName,
+      description: 'Marketplace imported package',
+    }, null, 2));
+    fs.writeFileSync(
+      path.join(skillDir, 'skills', `${skillName}-subskill`, 'SKILL.md'),
+      `---\nname: ${skillName}-subskill\nversion: v1.0.0\n---\n\n# ${skillName}\n`,
+    );
     fs.writeFileSync(path.join(skillDir, '.coreclaw-marketplace.json'), JSON.stringify({
       slug: skillName,
       version: 'v1.1.0',

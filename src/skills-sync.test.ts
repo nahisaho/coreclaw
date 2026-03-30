@@ -9,6 +9,7 @@ import {
   getSkillMetadata,
   importMarketplaceSkillGroupFromDir,
   isMarketplaceImportedSkill,
+  listAvailableSkills,
   listMarketplaceSkillGroups,
 } from './skills-sync.js';
 
@@ -28,8 +29,8 @@ describe('skills-sync marketplace helpers', () => {
   });
 
   it('lists marketplace skill groups with installed status and metadata', async () => {
-    fs.mkdirSync(path.join(tempDir, 'skills', 'scientist'), { recursive: true });
-    fs.writeFileSync(path.join(tempDir, 'skills', 'scientist', 'SKILL.md'), '# local');
+    fs.mkdirSync(path.join(tempDir, 'skills', 'scientist', 'skills', 'scientific-demo'), { recursive: true });
+    fs.writeFileSync(path.join(tempDir, 'skills', 'scientist', 'skills', 'scientific-demo', 'SKILL.md'), '# local');
 
     const fetchMock = (async (input) => {
       const url = String(input);
@@ -93,22 +94,22 @@ describe('skills-sync marketplace helpers', () => {
 
   it('imports a marketplace skill package from a source directory', () => {
     const sourceDir = path.join(tempDir, 'marketplace', 'scientist');
-    fs.mkdirSync(path.join(sourceDir, 'scientific-demo'), { recursive: true });
+    fs.mkdirSync(path.join(sourceDir, 'skills', 'scientific-demo'), { recursive: true });
     fs.mkdirSync(path.join(sourceDir, 'source'), { recursive: true });
-    fs.writeFileSync(path.join(sourceDir, 'SKILL.md'), '## Verification Loop (v0.2.0)');
-    fs.writeFileSync(path.join(sourceDir, 'group.json'), '{"name":"Scientist"}');
+    fs.writeFileSync(path.join(sourceDir, 'group.json'), '{"name":"Scientist","description":"Research pack"}');
     fs.writeFileSync(path.join(sourceDir, 'README.md'), 'package readme');
     fs.writeFileSync(path.join(sourceDir, 'main.py'), 'print("wrapper")');
     fs.writeFileSync(path.join(sourceDir, 'skill.json'), '{"entrypoint":"main.py","version":"v0.2.0"}');
     fs.writeFileSync(path.join(sourceDir, 'source', 'SKILL.md'), '# Package source');
-    fs.writeFileSync(path.join(sourceDir, 'scientific-demo', 'SKILL.md'), '# Subskill');
+    fs.writeFileSync(path.join(sourceDir, 'skills', 'scientific-demo', 'SKILL.md'), '# Subskill');
 
     const imported = importMarketplaceSkillGroupFromDir(sourceDir, 'scientist');
     expect(imported.updated).toBe(false);
-    expect(imported.fileCount).toBe(3);
-    expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'SKILL.md'))).toBe(true);
+    expect(imported.fileCount).toBe(2);
+    expect(listAvailableSkills()).toEqual(['scientist']);
+    expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'SKILL.md'))).toBe(false);
     expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'group.json'))).toBe(true);
-    expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'scientific-demo', 'SKILL.md'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'skills', 'scientific-demo', 'SKILL.md'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'README.md'))).toBe(false);
     expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'main.py'))).toBe(false);
     expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'skill.json'))).toBe(false);
@@ -120,18 +121,18 @@ describe('skills-sync marketplace helpers', () => {
     });
     expect(isMarketplaceImportedSkill('scientist')).toBe(true);
     expect(getSkillMetadata('scientist')).toEqual({
-      name: 'scientist',
-      description: '',
+      name: 'Scientist',
+      description: 'Research pack',
       version: 'v0.2.0',
     });
 
     fs.mkdirSync(path.join(tempDir, 'skills', 'scientist', 'prompts'), { recursive: true });
     fs.writeFileSync(path.join(tempDir, 'skills', 'scientist', 'prompts', 'local.md'), 'keep me');
 
-    fs.writeFileSync(path.join(sourceDir, 'scientific-demo', 'README.md'), 'updated');
+    fs.writeFileSync(path.join(sourceDir, 'skills', 'scientific-demo', 'README.md'), 'updated');
     const updated = importMarketplaceSkillGroupFromDir(sourceDir, 'scientist');
     expect(updated.updated).toBe(true);
-    expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'scientific-demo', 'README.md'))).toBe(true);
+    expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'skills', 'scientific-demo', 'README.md'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'prompts', 'local.md'))).toBe(true);
   });
 });
