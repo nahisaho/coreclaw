@@ -1342,6 +1342,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     const filePath = resolveArtifactPath(artFileMatch[1], decodeURIComponent(artFileMatch[2]));
     if (filePath) {
       const ext = path.extname(filePath);
+      const fileName = path.basename(filePath);
+      const encodedFileName = encodeURIComponent(fileName);
+      const safeFileName = fileName.replace(/[^\x20-\x7E]+/g, '_') || 'download';
+      const dispositionType = url.searchParams.get('download') === '1' ? 'attachment' : 'inline';
       const mimeTypes: Record<string, string> = {
         '.csv': 'text/csv',
         '.tsv': 'text/tab-separated-values',
@@ -1368,7 +1372,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       };
       res.writeHead(200, {
         'Content-Type': mimeTypes[ext] || 'application/octet-stream',
-        'Content-Disposition': `inline; filename="${path.basename(filePath)}"`,
+        'Content-Disposition': `${dispositionType}; filename="${safeFileName}"; filename*=UTF-8''${encodedFileName}`,
         'Access-Control-Allow-Origin': '*',
       });
       fs.createReadStream(filePath).pipe(res);

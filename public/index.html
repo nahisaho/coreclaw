@@ -820,6 +820,13 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
   border: 1px solid var(--border); border-bottom-left-radius: 2px;
   max-width: 90%;
 }
+.message-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 4px;
+}
 .message.assistant.streaming {
   width: min(100%, var(--chat-content-w));
   max-width: min(100%, var(--chat-content-w));
@@ -830,10 +837,36 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 }
 .message .msg-role {
   font-size: 11px; font-weight: 600; color: var(--text-muted);
-  margin-bottom: 4px; text-transform: uppercase; letter-spacing: 0.5px;
+  margin-bottom: 0; text-transform: uppercase; letter-spacing: 0.5px;
 }
 .message.user .msg-role { color: var(--accent); }
 .message.assistant .msg-role { color: var(--green); }
+.message-actions {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.message-copy-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 999px;
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1;
+  padding: 5px 10px;
+  transition: background .15s, color .15s, border-color .15s;
+}
+.message-copy-btn:hover {
+  background: var(--bg-hover);
+  color: var(--text-primary);
+  border-color: var(--text-muted);
+}
+.message-copy-btn.copied {
+  color: var(--green);
+  border-color: var(--green);
+}
 .message .msg-time {
   font-size: 10px; color: var(--text-muted);
   position: absolute; bottom: 4px; right: 10px;
@@ -3170,7 +3203,7 @@ function renderArtifactsTree() {
       const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
       const icon = getFileIcon(ext);
       const viewable = isViewable(ext);
-      const viewUrl = `/api/experiments/${currentExpId}/artifacts/${filepath}`;
+      const downloadUrl = buildArtifactUrl(filepath, { download: true });
       const escapedFp = esc(filepath);
       return `<div class="artifact-tree-row file" data-fp="${escapedFp}" data-path="${escapedFp}" style="--depth:${depth}">
         <span class="artifact-toggle"></span>
@@ -3181,7 +3214,7 @@ function renderArtifactsTree() {
         </div>
         <div class="artifact-actions">
           ${viewable ? `<button class="artifact-btn view-btn" onclick="viewArtifact(this.closest('[data-fp]').dataset.fp); event.stopPropagation();">👁 View</button>` : ''}
-          <button class="artifact-btn dl-btn" onclick="downloadArtifact('${viewUrl}', '${esc(name)}'); event.stopPropagation();">⬇ Download</button>
+          <button class="artifact-btn dl-btn" onclick="downloadArtifact('${downloadUrl}', '${esc(name)}'); event.stopPropagation();">⬇ Download</button>
         </div>
       </div>`;
     }).join('');
@@ -3249,6 +3282,15 @@ function getFileIcon(ext) {
   return icons[ext] || '📄';
 }
 
+function buildArtifactUrl(filepath, options = {}) {
+  if (!currentExpId || !filepath) return '#';
+  const encodedPath = encodeURIComponent(filepath);
+  const params = new URLSearchParams();
+  if (options.download) params.set('download', '1');
+  const query = params.toString();
+  return `/api/experiments/${currentExpId}/artifacts/${encodedPath}${query ? `?${query}` : ''}`;
+}
+
 function isViewable(ext) {
   const viewable = [
     'txt', 'md', 'log', 'csv', 'tsv', 'json', 'yaml', 'yml',
@@ -3290,7 +3332,7 @@ async function viewArtifact(filepath) {
   avCurrentFilepath = filepath;
   const name = filepath.split('/').pop();
   const ext = name.includes('.') ? name.split('.').pop().toLowerCase() : '';
-  const url = `/api/experiments/${currentExpId}/artifacts/${filepath}`;
+  const url = buildArtifactUrl(filepath);
 
   avCurrentUrl = url;
   avCurrentName = name;
@@ -3373,14 +3415,18 @@ function avRenderMarkdown(text, filepath) {
     let src = href || '';
     // Rewrite relative image paths to artifact API URLs
     if (src && !src.startsWith('http') && !src.startsWith('/') && !src.startsWith('data:')) {
-      src = `/api/experiments/${currentExpId}/artifacts/${dir}${src}`;
+      src = buildArtifactUrl(`${dir}${src}`);
     }
     const titleAttr = title ? ` title="${esc(title)}"` : '';
     return `<img src="${src}" alt="${esc(altText || '')}"${titleAttr}>`;
   };
   avRenderer.link = function({ href, title, text: linkText }) {
+    let resolvedHref = href || '';
+    if (resolvedHref && !resolvedHref.startsWith('http') && !resolvedHref.startsWith('/') && !resolvedHref.startsWith('#') && !resolvedHref.startsWith('data:')) {
+      resolvedHref = buildArtifactUrl(`${dir}${resolvedHref}`);
+    }
     const titleAttr = title ? ` title="${title}"` : '';
-    return `<a href="${href}"${titleAttr} target="_blank" rel="noopener noreferrer">${linkText}</a>`;
+    return `<a href="${resolvedHref}"${titleAttr} target="_blank" rel="noopener noreferrer">${linkText}</a>`;
   };
   const html = marked.parse(text, { renderer: avRenderer, breaks: true, gfm: true });
   document.getElementById('avBody').innerHTML = `<div class="av-content">${html}</div>`;
@@ -3449,14 +3495,40 @@ function appendMessage(msg) {
   if (msg.id) div.dataset.msgId = msg.id;
   const time = new Date(msg.timestamp).toLocaleTimeString(getOutputLanguageLocale(), { hour: '2-digit', minute: '2-digit' });
   const roleLabel = msg.role === 'user' ? (msg.user_id || 'You') : msg.role === 'assistant' ? 'CoreClaw' : 'System';
+  const actionsHtml = msg.role === 'assistant'
+    ? '<div class="message-actions"><button class="message-copy-btn" onclick="copyMessageContent(this)" title="応答をコピー">Copy</button></div>'
+    : '';
 
   div.innerHTML = `
-    <div class="msg-role">${roleLabel}</div>
+    <div class="message-header">
+      <div class="msg-role">${roleLabel}</div>
+      ${actionsHtml}
+    </div>
     <div class="msg-content">${renderMarkdown(msg.content)}</div>
     <span class="msg-time">${time}</span>
   `;
   area.appendChild(div);
   scrollToBottom();
+}
+
+function copyMessageContent(btn) {
+  const message = btn.closest('.message');
+  const content = message ? message.querySelector('.msg-content') : null;
+  if (!content) return;
+
+  navigator.clipboard.writeText(content.innerText).then(() => {
+    btn.textContent = 'Copied!';
+    btn.classList.add('copied');
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+      btn.classList.remove('copied');
+    }, 2000);
+  }).catch(() => {
+    btn.textContent = 'Error';
+    setTimeout(() => {
+      btn.textContent = 'Copy';
+    }, 2000);
+  });
 }
 
 // Create streaming message shell with status panel immediately (before any chunks arrive)

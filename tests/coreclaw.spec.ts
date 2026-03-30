@@ -299,6 +299,58 @@ test.describe('Experiment Management', () => {
     await expect(page.locator('.artifact-tree-row.directory[data-path="data"]')).toHaveAttribute('data-collapsed', 'false');
     await expect(page.locator('.artifact-tree-row.directory[data-path="data/empty"] .artifact-name')).toHaveText('empty');
   });
+
+  test('artifacts view and download support Japanese filenames', async ({ page }) => {
+    await page.addInitScript(() => {
+      const originalClick = HTMLAnchorElement.prototype.click;
+      window.__lastDownload = null;
+      HTMLAnchorElement.prototype.click = function patchedClick() {
+        if (this.download) {
+          window.__lastDownload = {
+            href: this.href,
+            download: this.download,
+          };
+          return;
+        }
+        return originalClick.call(this);
+      };
+    });
+
+    await page.route('**/api/experiments/*/artifacts/**', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'text/markdown; charset=utf-8',
+        body: '# 結果\n\n日本語ファイル名の表示確認',
+      });
+    });
+
+    await page.goto('/');
+
+    await page.evaluate(() => {
+      currentExpId = 'jp-artifact-test';
+      currentArtifactEntries = [{ path: '結果レポート.md', type: 'file' }];
+      renderArtifactsTree();
+      document.getElementById('artifactsModal').classList.add('visible');
+    });
+
+    await expect(page.locator('#artifactsModal')).toHaveClass(/visible/);
+
+    const row = page.locator('.artifact-tree-row.file').filter({ hasText: '結果レポート.md' });
+    await expect(row.locator('.artifact-name')).toHaveText('結果レポート.md');
+
+    await row.locator('.artifact-btn.dl-btn').click();
+    await expect.poll(() => page.evaluate(() => window.__lastDownload)).toEqual(expect.objectContaining({
+      download: '結果レポート.md',
+    }));
+    await expect.poll(() => page.evaluate(() => window.__lastDownload.href)).toContain('%E7%B5%90%E6%9E%9C%E3%83%AC%E3%83%9D%E3%83%BC%E3%83%88.md');
+    await expect.poll(() => page.evaluate(() => window.__lastDownload.href)).toContain('download=1');
+
+    await row.locator('.artifact-btn.view-btn').click();
+    const viewerModal = page.locator('#artifactViewerModal.visible');
+    await expect(viewerModal).toHaveCount(1);
+    await expect(viewerModal.locator('#avFilename')).toHaveText('結果レポート.md');
+    await expect(viewerModal.locator('#avBody')).toContainText('日本語ファイル名の表示確認');
+  });
 });
 
 // ============================================================
@@ -1192,6 +1244,55 @@ test.describe('Chat Flow', () => {
     await expect(page.locator('.message.user .msg-content').first()).toContainText('Hello from Playwright');
   });
 
+  test('assistant messages expose a Copy button that copies the response text', async ({ page }) => {
+    await page.addInitScript(() => {
+      let copiedText = '';
+      Object.defineProperty(window, '__copiedMessageText', {
+        configurable: true,
+        get() {
+          return copiedText;
+        },
+        set(value) {
+          copiedText = String(value);
+        },
+      });
+
+      Object.defineProperty(navigator, 'clipboard', {
+        configurable: true,
+        value: {
+          writeText(text) {
+            window.__copiedMessageText = text;
+            return Promise.resolve();
+          },
+        },
+      });
+    });
+
+    await page.goto('/');
+    await createExperiment(page, 'Assistant Copy Button Test');
+
+    await page.evaluate(() => {
+      window.appendMessage({
+        id: 'assistant-copy-test',
+        role: 'assistant',
+        content: 'Copied from assistant response\n\n- bullet 1\n- bullet 2',
+        timestamp: new Date().toISOString(),
+      });
+    });
+
+    const assistantMessage = page.locator('.message.assistant').last();
+    const copyButton = assistantMessage.locator('.message-copy-btn');
+
+    await expect(copyButton).toBeVisible();
+    await expect(copyButton).toHaveText('Copy');
+
+    await copyButton.click();
+
+    await expect(copyButton).toHaveText('Copied!');
+    await expect.poll(() => page.evaluate(() => window.__copiedMessageText)).toContain('Copied from assistant response');
+    await expect.poll(() => page.evaluate(() => window.__copiedMessageText)).toContain('bullet 1');
+  });
+
   test.describe('Progress UI', () => {
     test('agent status panel shows human-friendly progress text', async ({ page }) => {
       await mockOutputLanguage(page, 'ja');
@@ -1907,6 +2008,38 @@ test.describe('REST API', () => {
     expect(createdSkill).toHaveProperty('version');
 
     await request.delete(`/api/skills/${skillName}`);
+  });
+
+  test('GET /api/experiments/:id/artifacts/:path supports Japanese filenames for view and download', async ({ request }) => {
+    const createRes = await request.post('/api/experiments', {
+      data: { name: 'Japanese Artifact API Test', description: 'Artifact filename encoding coverage' },
+    });
+    expect(createRes.ok()).toBeTruthy();
+    const exp = await createRes.json();
+
+    const artifactName = '結果レポート.md';
+    const artifactPath = path.join(process.cwd(), 'data', 'experiments', exp.id, 'artifacts', artifactName);
+    fs.mkdirSync(path.dirname(artifactPath), { recursive: true });
+    fs.writeFileSync(artifactPath, '# 結果\n\n日本語ファイル名の API 確認\n');
+
+    try {
+      const encodedPath = encodeURIComponent(artifactName);
+
+      const viewRes = await request.get(`/api/experiments/${exp.id}/artifacts/${encodedPath}`);
+      expect(viewRes.ok()).toBeTruthy();
+      expect(viewRes.headers()['content-type']).toContain('text/markdown');
+      expect(viewRes.headers()['content-disposition']).toContain("filename*=UTF-8''%E7%B5%90%E6%9E%9C%E3%83%AC%E3%83%9D%E3%83%BC%E3%83%88.md");
+      expect(await viewRes.text()).toContain('日本語ファイル名の API 確認');
+
+      const downloadRes = await request.get(`/api/experiments/${exp.id}/artifacts/${encodedPath}?download=1`);
+      expect(downloadRes.ok()).toBeTruthy();
+      expect(downloadRes.headers()['content-disposition']).toContain('attachment;');
+      expect(downloadRes.headers()['content-disposition']).toContain("filename*=UTF-8''%E7%B5%90%E6%9E%9C%E3%83%AC%E3%83%9D%E3%83%BC%E3%83%88.md");
+    } finally {
+      fs.rmSync(path.join(process.cwd(), 'data', 'experiments', exp.id), { recursive: true, force: true });
+      fs.rmSync(path.join(process.cwd(), 'groups', `experiment-${exp.id}`), { recursive: true, force: true });
+      await request.delete(`/api/experiments/${exp.id}`);
+    }
   });
 
   test('PUT /api/skills accepts nested package ZIP uploads without a root SKILL.md', async ({ request }) => {

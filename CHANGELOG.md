@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.67] - 2026-03-30
+
+### Changed
+
+- **Artifact filenames with Japanese characters**: ArtifactsのView/Downloadで日本語ファイル名を正しく扱えるようにし、viewer内の相対リンクや画像参照も同じURL encodingに揃えました。
+
 ## [0.1.66] - 2026-03-30
 
 ### Changed
