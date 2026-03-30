@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.66] - 2026-03-30
+
+### Changed
+
+- **Nested ZIP skill uploads**: ZIPアップロード時は展開ルートの `SKILL.md` を必須にせず、`skills/<subskill>/SKILL.md` を含むパッケージ形式のskillも取り込めるようにしました。
+
 ## [0.1.65] - 2026-03-30
 
 ### Changed

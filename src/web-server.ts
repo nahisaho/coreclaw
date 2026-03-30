@@ -388,6 +388,27 @@ function splitBuffer(buf: Buffer, delimiter: Buffer): Buffer[] {
   return parts;
 }
 
+function listNestedSkillDefinitionPaths(skillDir: string): string[] {
+  const nestedSkillsRoot = path.join(skillDir, 'skills');
+  if (!fs.existsSync(nestedSkillsRoot) || !fs.statSync(nestedSkillsRoot).isDirectory()) {
+    return [];
+  }
+
+  return fs
+    .readdirSync(nestedSkillsRoot)
+    .map((entry) => path.join(nestedSkillsRoot, entry, 'SKILL.md'))
+    .filter((skillPath) => fs.existsSync(skillPath))
+    .sort();
+}
+
+function hasSkillDefinition(skillDir: string): boolean {
+  if (fs.existsSync(path.join(skillDir, 'SKILL.md'))) {
+    return true;
+  }
+
+  return listNestedSkillDefinitionPaths(skillDir).length > 0;
+}
+
 // ---------------------------------------------------------------------------
 // ZIP file builder (minimal, no dependencies)
 // ---------------------------------------------------------------------------
@@ -1595,10 +1616,10 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         if (entries.length === 1 && fs.statSync(path.join(extracted, entries[0])).isDirectory()) {
           srcDir = path.join(extracted, entries[0]);
         }
-        // Verify SKILL.md exists
-        if (!fs.existsSync(path.join(srcDir, 'SKILL.md'))) {
+        // Accept either a root SKILL.md or nested skills/<subskill>/SKILL.md files.
+        if (!hasSkillDefinition(srcDir)) {
           fs.rmSync(tmpDir, { recursive: true, force: true });
-          sendJson(res, 400, { error: 'ZIP must contain a SKILL.md file' });
+          sendJson(res, 400, { error: 'ZIP must contain at least one SKILL.md file' });
           return;
         }
         // Replace skill directory

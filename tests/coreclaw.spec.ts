@@ -25,6 +25,81 @@ function listZipEntryNames(zipBuffer: Buffer): string[] {
   return names;
 }
 
+function buildZipBuffer(entries: Array<{ name: string; data: string | Buffer }>): Buffer {
+  const parts: Buffer[] = [];
+  const centralDir: Buffer[] = [];
+  let offset = 0;
+
+  for (const entry of entries) {
+    const data = Buffer.isBuffer(entry.data) ? entry.data : Buffer.from(entry.data, 'utf-8');
+    const nameBytes = Buffer.from(entry.name, 'utf-8');
+    const crc = crc32(data);
+
+    const local = Buffer.alloc(30 + nameBytes.length);
+    local.writeUInt32LE(0x04034b50, 0);
+    local.writeUInt16LE(20, 4);
+    local.writeUInt16LE(0, 6);
+    local.writeUInt16LE(0, 8);
+    local.writeUInt16LE(0, 10);
+    local.writeUInt16LE(0, 12);
+    local.writeUInt32LE(crc, 14);
+    local.writeUInt32LE(data.length, 18);
+    local.writeUInt32LE(data.length, 22);
+    local.writeUInt16LE(nameBytes.length, 26);
+    local.writeUInt16LE(0, 28);
+    nameBytes.copy(local, 30);
+
+    parts.push(local, data);
+
+    const central = Buffer.alloc(46 + nameBytes.length);
+    central.writeUInt32LE(0x02014b50, 0);
+    central.writeUInt16LE(20, 4);
+    central.writeUInt16LE(20, 6);
+    central.writeUInt16LE(0, 8);
+    central.writeUInt16LE(0, 10);
+    central.writeUInt16LE(0, 12);
+    central.writeUInt16LE(0, 14);
+    central.writeUInt32LE(crc, 16);
+    central.writeUInt32LE(data.length, 20);
+    central.writeUInt32LE(data.length, 24);
+    central.writeUInt16LE(nameBytes.length, 28);
+    central.writeUInt16LE(0, 30);
+    central.writeUInt16LE(0, 32);
+    central.writeUInt16LE(0, 34);
+    central.writeUInt16LE(0, 36);
+    central.writeUInt32LE(0, 38);
+    central.writeUInt32LE(offset, 42);
+    nameBytes.copy(central, 46);
+
+    centralDir.push(central);
+    offset += local.length + data.length;
+  }
+
+  const centralDirBuf = Buffer.concat(centralDir);
+  const eocd = Buffer.alloc(22);
+  eocd.writeUInt32LE(0x06054b50, 0);
+  eocd.writeUInt16LE(0, 4);
+  eocd.writeUInt16LE(0, 6);
+  eocd.writeUInt16LE(entries.length, 8);
+  eocd.writeUInt16LE(entries.length, 10);
+  eocd.writeUInt32LE(centralDirBuf.length, 12);
+  eocd.writeUInt32LE(offset, 16);
+  eocd.writeUInt16LE(0, 20);
+
+  return Buffer.concat([...parts, centralDirBuf, eocd]);
+}
+
+function crc32(buf: Buffer): number {
+  let crc = 0xFFFFFFFF;
+  for (let i = 0; i < buf.length; i++) {
+    crc ^= buf[i];
+    for (let j = 0; j < 8; j++) {
+      crc = (crc >>> 1) ^ (crc & 1 ? 0xEDB88320 : 0);
+    }
+  }
+  return (crc ^ 0xFFFFFFFF) >>> 0;
+}
+
 // ============================================================
 // 1. Page Load & Basic UI
 // ============================================================
@@ -1832,6 +1907,53 @@ test.describe('REST API', () => {
     expect(createdSkill).toHaveProperty('version');
 
     await request.delete(`/api/skills/${skillName}`);
+  });
+
+  test('PUT /api/skills accepts nested package ZIP uploads without a root SKILL.md', async ({ request }) => {
+    const skillName = `zip-package-${Date.now()}`;
+    const subskillName = `${skillName}-subskill`;
+    const uploadedSkillDir = path.join(process.cwd(), 'skills', skillName);
+    const zipBuffer = buildZipBuffer([
+      {
+        name: `${skillName}/group.json`,
+        data: JSON.stringify({
+          name: skillName,
+          description: 'ZIP package test skill',
+        }, null, 2),
+      },
+      {
+        name: `${skillName}/skills/${subskillName}/SKILL.md`,
+        data: `---\nname: ${subskillName}\nversion: v2.0.0\n---\n\n# ${subskillName}\n`,
+      },
+    ]);
+
+    try {
+      const uploadRes = await request.put(`/api/skills/${skillName}`, {
+        headers: {
+          'content-type': 'application/zip',
+        },
+        data: zipBuffer,
+      });
+
+      expect(uploadRes.ok()).toBeTruthy();
+      expect(await uploadRes.json()).toEqual(expect.objectContaining({
+        name: skillName,
+        updated: true,
+      }));
+
+      expect(fs.existsSync(path.join(uploadedSkillDir, 'SKILL.md'))).toBe(false);
+      expect(fs.existsSync(path.join(uploadedSkillDir, 'group.json'))).toBe(true);
+      expect(fs.existsSync(path.join(uploadedSkillDir, 'skills', subskillName, 'SKILL.md'))).toBe(true);
+
+      const res = await request.get('/api/skills');
+      expect(res.ok()).toBeTruthy();
+      const body = await res.json();
+      const uploadedSkill = body.find((skill: { name?: string }) => skill.name === skillName);
+      expect(uploadedSkill).toBeTruthy();
+      expect(uploadedSkill.version).toBe('v2.0.0');
+    } finally {
+      fs.rmSync(uploadedSkillDir, { recursive: true, force: true });
+    }
   });
 
   test('GET /api/skills prefers marketplace import version for imported skills', async ({ request }) => {
