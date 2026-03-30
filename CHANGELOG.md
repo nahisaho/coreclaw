@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.65] - 2026-03-30
+
+### Changed
+
+- **Nested marketplace packages**: Settings > Skills > Marketplace Importで `skills/<package>/skills/<subskill>/SKILL.md` 構成のマーケットプレイスパッケージを認識し、version表示・import・update判定を継続できるようにしました。
+
 ## [0.1.64] - 2026-03-30
 
 ### Changed
