@@ -444,7 +444,37 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
 .marketplace-search input:focus { border-color: var(--accent); }
 .marketplace-search input::placeholder { color: var(--text-muted); }
 .marketplace-title { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.marketplace-source-status { display: flex; flex-direction: column; gap: 6px; margin-bottom: 10px; }
+.marketplace-source-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 8px 10px; border: 1px solid var(--border);
+  border-radius: 8px; background: var(--bg-secondary); font-size: 12px;
+  color: var(--text-secondary);
+}
+.marketplace-source-row[data-enabled="false"] { border-style: dashed; }
+.marketplace-source-meta { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.marketplace-source-name { font-weight: 600; color: var(--text-primary); }
+.marketplace-source-url { font-size: 11px; color: var(--text-muted); word-break: break-all; }
+.marketplace-source-state {
+  font-size: 11px; border: 1px solid var(--border); border-radius: 999px;
+  padding: 2px 8px; white-space: nowrap;
+}
+.marketplace-source-row[data-enabled="true"] .marketplace-source-state {
+  color: var(--green); border-color: rgba(34,197,94,.2); background: rgba(34,197,94,.12);
+}
+.marketplace-source-row[data-enabled="false"] .marketplace-source-state {
+  color: var(--text-muted); background: var(--bg-tertiary);
+}
 .marketplace-list { display: flex; flex-direction: column; gap: 6px; }
+.marketplace-source-group {
+  display: flex; flex-direction: column; gap: 6px; padding: 10px;
+  border: 1px solid var(--border); border-radius: 10px; background: var(--bg-secondary);
+}
+.marketplace-source-heading {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; font-size: 12px; font-weight: 600; color: var(--text-primary);
+}
+.marketplace-source-heading .marketplace-source-url { max-width: 65%; text-align: right; }
 .marketplace-card-meta {
   display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-left: 12px; flex-shrink: 0;
 }
@@ -1800,6 +1830,11 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
             <button class="btn-skill-action" onclick="scanAllSkills()" id="scanAllBtn">🔍 Scan All</button>
           </div>
           <div class="field-hint" id="settingsSkillsHint" style="margin-bottom:12px">Skills are directories containing SKILL.md and optional supporting files. Upload as ZIP.</div>
+          <div class="settings-field">
+            <label id="settingsMySkillsRepoUrlLabel"><span class="field-icon">🔗</span> My SKILLS GitHub Repository</label>
+            <input type="text" id="settingsMySkillsRepoUrl" placeholder="https://github.com/owner/repo">
+            <div class="field-hint" id="settingsMySkillsRepoUrlHint">Additional skill packs are loaded from the repository's /skills directory.</div>
+          </div>
           <div id="newSkillForm" class="new-skill-form" style="display:none">
             <div class="settings-field">
               <label id="settingsNewSkillNameLabel">Skill Name</label>
@@ -1824,13 +1859,14 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
           <div class="marketplace-section">
             <div class="marketplace-header">
               <div>
-                <div class="marketplace-title" id="settingsMarketplaceTitle">Marketplace Import</div>
-                <div class="field-hint" id="settingsMarketplaceHint">Import official skill packs from nahisaho/coreclaw-marketplace.</div>
+                <div class="marketplace-title" id="settingsMarketplaceTitle">Skill Pack Import</div>
+                <div class="field-hint" id="settingsMarketplaceHint">Import official skill packs and additional packs from your My SKILLS repository.</div>
               </div>
               <button class="btn-skill-action" id="settingsRefreshMarketplaceButton" onclick="refreshMarketplaceSkills(this)">🔄 Refresh Marketplace</button>
             </div>
+            <div id="marketplaceSourceStatus" class="marketplace-source-status"></div>
             <div class="marketplace-search">
-              <input type="text" id="marketplaceSearchInput" placeholder="Search marketplace skills by name or description" oninput="filterMarketplaceSkills(this.value)">
+              <input type="text" id="marketplaceSearchInput" placeholder="Search skill packs by name or description" oninput="filterMarketplaceSkills(this.value)">
             </div>
             <div id="marketplaceSkillList" class="marketplace-list"></div>
             <div id="marketplaceSkillEmpty" class="skill-empty">Loading marketplace skills...</div>
@@ -1927,6 +1963,7 @@ html, body { height: 100%; font-family: -apple-system, BlinkMacSystemFont, 'Sego
       <button class="modal-close" onclick="closeModal('marketplaceInfoModal')" title="Close">✕</button>
     </div>
     <div class="marketplace-info-meta">
+      <span class="marketplace-info-badge" id="marketplaceInfoSource"></span>
       <span class="marketplace-info-badge" id="marketplaceInfoCount"></span>
       <span class="marketplace-info-badge" id="marketplaceInfoVersion"></span>
       <span class="marketplace-installed" id="marketplaceInfoInstalled" style="display:none">Installed</span>
@@ -4718,6 +4755,7 @@ function selectProvider(provider) {
 // ===== Skills management =====
 let cachedSkills = [];
 let cachedMarketplaceSkills = [];
+let cachedMarketplaceSources = [];
 let marketplaceSearchTerm = '';
 
 async function loadSkillList() {
@@ -4741,12 +4779,13 @@ async function loadSkillList() {
         ? '<span class="skill-scan-badge ' + scanClass + '" title="' + scanTitle + '" data-skill="' + esc(s.name) + '"></span>'
           + '<button class="skill-scan-info" onclick="showScanDetail(\'' + esc(s.name) + '\')" title="Scan details">info</button>'
         : '';
+      const sourceLabel = s.marketplaceSourceLabel || 'Marketplace';
       const marketplaceStatus = s.marketplaceImported
-        ? `<span class="skill-marketplace-status">${esc(s.updateAvailable ? `Update available: ${s.latestVersion || '-'}` : s.latestVersion ? `Marketplace ${s.latestVersion}` : 'Marketplace import')}</span>`
+        ? `<span class="skill-marketplace-status">${esc(s.updateAvailable ? `${sourceLabel} update available: ${s.latestVersion || '-'}` : s.latestVersion ? `${sourceLabel} ${s.latestVersion}` : `${sourceLabel} import`)}</span>`
         : '';
       const marketplaceButtons = s.marketplaceImported
         ? `<button class="btn-skill-action skill-marketplace-btn" onclick="checkMarketplaceSkillUpdate('${esc(s.name)}', this)">Check</button>
-          <button class="btn-skill-action skill-marketplace-btn" onclick="updateInstalledMarketplaceSkill('${esc(s.marketplaceSlug || s.name)}', this)" ${s.updateAvailable ? '' : 'disabled'}>Update</button>`
+          <button class="btn-skill-action skill-marketplace-btn" onclick="updateInstalledMarketplaceSkill('${esc(s.marketplaceSlug || s.name)}', '${esc(s.marketplaceSourceId || 'official')}', this)" ${s.updateAvailable ? '' : 'disabled'}>Update</button>`
         : '';
       return `
       <div class="skill-card" id="skill-card-${esc(s.name)}">
@@ -4782,23 +4821,61 @@ async function loadMarketplaceSkillList(force = false) {
     try {
       const res = await fetch('/api/skills/marketplace');
       if (!res.ok) throw new Error('Failed to load marketplace');
-      cachedMarketplaceSkills = await res.json();
+      const payload = await res.json();
+      cachedMarketplaceSkills = (Array.isArray(payload)
+        ? payload
+        : Array.isArray(payload.groups)
+          ? payload.groups
+          : []).map(group => ({
+            ...group,
+            sourceId: group.sourceId || 'official',
+            sourceLabel: group.sourceLabel || 'Marketplace',
+            repoUrl: group.repoUrl || 'https://github.com/nahisaho/coreclaw-marketplace',
+          }));
+      cachedMarketplaceSources = Array.isArray(payload?.sources) ? payload.sources : [];
     } catch (e) {
       console.error('Failed to load marketplace skills', e);
       cachedMarketplaceSkills = [];
+      cachedMarketplaceSources = [];
       empty.textContent = 'Failed to load marketplace skills.';
       return;
     }
   }
 
+  renderMarketplaceSourceStatus();
+
   if (!cachedMarketplaceSkills.length) {
     list.innerHTML = '';
     empty.style.display = '';
-    empty.textContent = 'No marketplace skills found.';
+    empty.textContent = 'No skill packs found.';
     return;
   }
 
   renderMarketplaceSkillList();
+}
+
+function renderMarketplaceSourceStatus() {
+  const container = document.getElementById('marketplaceSourceStatus');
+  if (!container) return;
+  if (!cachedMarketplaceSources.length) {
+    container.innerHTML = '';
+    return;
+  }
+
+  container.innerHTML = cachedMarketplaceSources.map(source => {
+    const detail = source.enabled
+      ? (source.repoUrl || 'Ready')
+      : (source.error || 'Configure a GitHub repository URL to enable this source.');
+    return `
+      <div class="marketplace-source-row" data-enabled="${source.enabled ? 'true' : 'false'}">
+        <div class="marketplace-source-meta">
+          <div class="marketplace-source-name">${esc(source.label || 'Marketplace')}</div>
+          <div class="marketplace-source-url">${esc(detail)}</div>
+        </div>
+        <span class="marketplace-source-state">${esc(source.enabled ? 'Enabled' : source.configured ? 'Unavailable' : 'Not configured')}</span>
+      </div>
+    `;
+  }).join('');
 }
 
 async function refreshMarketplaceSkills(button) {
@@ -4841,34 +4918,53 @@ function renderMarketplaceSkillList() {
     list.innerHTML = '';
     empty.style.display = '';
     empty.textContent = marketplaceSearchTerm
-      ? `No marketplace skills match "${marketplaceSearchTerm}".`
-      : 'No marketplace skills found.';
+      ? `No skill packs match "${marketplaceSearchTerm}".`
+      : 'No skill packs found.';
     return;
   }
 
   empty.style.display = 'none';
-  list.innerHTML = filteredMarketplaceSkills.map(group => `
-    <div class="skill-card" id="marketplace-skill-${esc(group.slug)}">
-      <div class="skill-card-info">
-        <div class="skill-card-name">${esc(group.icon || '📦')} ${esc(group.name)}</div>
-        <div class="skill-card-desc">${esc(group.description || '')}</div>
+  const sourceOrder = cachedMarketplaceSources.length
+    ? cachedMarketplaceSources.map(source => source.id)
+    : [...new Set(filteredMarketplaceSkills.map(group => group.sourceId))];
+
+  list.innerHTML = sourceOrder.map(sourceId => {
+    const source = cachedMarketplaceSources.find(item => item.id === sourceId)
+      || filteredMarketplaceSkills.find(item => item.sourceId === sourceId);
+    const sourceGroups = filteredMarketplaceSkills.filter(group => group.sourceId === sourceId);
+    if (!sourceGroups.length) return '';
+    return `
+      <div class="marketplace-source-group" data-source-id="${esc(sourceId)}">
+        <div class="marketplace-source-heading">
+          <span>${esc(source?.label || source?.sourceLabel || 'Marketplace')}</span>
+          <span class="marketplace-source-url">${esc(source?.repoUrl || '')}</span>
+        </div>
+        ${sourceGroups.map(group => `
+          <div class="skill-card" id="marketplace-skill-${esc(group.sourceId)}-${esc(group.slug)}">
+            <div class="skill-card-info">
+              <div class="skill-card-name">${esc(group.icon || '📦')} ${esc(group.name)}</div>
+              <div class="skill-card-desc">${esc(group.description || '')}</div>
+            </div>
+            <div class="marketplace-card-meta">
+              <span class="skill-card-version">Version ${esc(group.version || '-')}</span>
+              <span class="marketplace-count">${group.count || 0} skills</span>
+              <button class="marketplace-info-btn" onclick="showMarketplaceInfo('${esc(group.sourceId)}', '${esc(group.slug)}')" title="Show description">info</button>
+              ${group.installed ? '<span class="marketplace-installed">Installed</span>' : ''}
+              <button class="btn-skill-action marketplace-import-btn" onclick="importMarketplaceSkill(\'${esc(group.slug)}\', \'${esc(group.sourceId)}\', this)" ${group.installed && !group.updateAvailable ? 'disabled' : ''}>${group.installed ? 'Update' : 'Import'}</button>
+            </div>
+          </div>
+        `).join('')}
       </div>
-      <div class="marketplace-card-meta">
-        <span class="skill-card-version">Version ${esc(group.version || '-')}</span>
-        <span class="marketplace-count">${group.count || 0} skills</span>
-        <button class="marketplace-info-btn" onclick="showMarketplaceInfo('${esc(group.slug)}')" title="Show description">info</button>
-        ${group.installed ? '<span class="marketplace-installed">Installed</span>' : ''}
-        <button class="btn-skill-action marketplace-import-btn" onclick="importMarketplaceSkill(\'${esc(group.slug)}\', this)" ${group.installed && !group.updateAvailable ? 'disabled' : ''}>${group.installed ? 'Update' : 'Import'}</button>
-      </div>
-    </div>
-  `).join('');
+    `;
+  }).join('');
 }
 
-function showMarketplaceInfo(groupSlug) {
-  const group = cachedMarketplaceSkills.find(item => item.slug === groupSlug);
+function showMarketplaceInfo(sourceId, groupSlug) {
+  const group = cachedMarketplaceSkills.find(item => item.slug === groupSlug && item.sourceId === sourceId);
   if (!group) return;
 
   document.getElementById('marketplaceInfoTitle').textContent = `${group.icon || '📦'} ${group.name}`;
+  document.getElementById('marketplaceInfoSource').textContent = group.sourceLabel || 'Marketplace';
   document.getElementById('marketplaceInfoCount').textContent = `${group.count || 0} skills`;
   document.getElementById('marketplaceInfoVersion').textContent = `Version ${group.version || '-'}`;
   document.getElementById('marketplaceInfoBody').textContent = group.description || 'No description available.';
@@ -4879,7 +4975,7 @@ function showMarketplaceInfo(groupSlug) {
   document.getElementById('marketplaceInfoModal').classList.add('visible');
 }
 
-async function importMarketplaceSkill(groupName, button) {
+async function importMarketplaceSkill(groupName, sourceId, button) {
   const actionLabel = button?.textContent || 'Import';
   if (button) {
     button.disabled = true;
@@ -4890,7 +4986,7 @@ async function importMarketplaceSkill(groupName, button) {
     const res = await fetch('/api/skills/marketplace/import', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ group: groupName }),
+      body: JSON.stringify({ group: groupName, sourceId }),
     });
     const data = await res.json();
     if (!res.ok) {
@@ -4935,8 +5031,8 @@ async function checkMarketplaceSkillUpdate(skillName, button) {
   }
 }
 
-async function updateInstalledMarketplaceSkill(groupName, button) {
-  await importMarketplaceSkill(groupName, button);
+async function updateInstalledMarketplaceSkill(groupName, sourceId, button) {
+  await importMarketplaceSkill(groupName, sourceId, button);
 }
 
 function showNewSkillForm() {
@@ -5667,6 +5763,7 @@ async function showSettings() {
     document.getElementById('settingsGithubToken').value = settings.github_token || '';
     document.getElementById('settingsCopilotModel').value = settings.copilot_model || '';
     document.getElementById('settingsGithubMcpTools').value = settings.github_mcp_tools || '';
+    document.getElementById('settingsMySkillsRepoUrl').value = settings.my_skills_repo_url || '';
     document.getElementById('settingsOutputLanguage').value = settings.output_language || 'ja';
     document.getElementById('settingsOpenaiKey').value = settings.openai_api_key || '';
     document.getElementById('settingsAzureKey').value = settings.azure_openai_api_key || '';
@@ -5697,6 +5794,7 @@ async function saveSettings() {
     github_token: document.getElementById('settingsGithubToken').value.trim(),
     copilot_model: document.getElementById('settingsCopilotModel').value,
     github_mcp_tools: document.getElementById('settingsGithubMcpTools').value,
+    my_skills_repo_url: document.getElementById('settingsMySkillsRepoUrl').value.trim(),
     output_language: document.getElementById('settingsOutputLanguage').value || 'ja',
     ai_provider: provider,
     openai_api_key: document.getElementById('settingsOpenaiKey').value.trim(),

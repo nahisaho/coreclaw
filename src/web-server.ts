@@ -54,12 +54,16 @@ import {
 import { getDatabase } from './db.js';
 import { DATA_DIR, GROUPS_DIR } from './config.js';
 import {
+  getCustomMarketplaceSource,
   getMarketplaceImportMetadata,
   getSkillMetadata,
   importMarketplaceSkillGroup,
   isMarketplaceImportedSkill,
   listAvailableSkills,
   listMarketplaceSkillGroups,
+  OFFICIAL_MARKETPLACE_SOURCE_ID,
+  type MarketplaceSkillGroup,
+  type MarketplaceSourceConfig,
 } from './skills-sync.js';
 import { syncExperiment, pullExperiment } from './github-sync.js';
 import { execSync, spawn, spawnSync } from 'child_process';
@@ -134,6 +138,7 @@ const SETTINGS_KEYS = [
   'github_token',
   'copilot_model',
   'github_mcp_tools',
+  'my_skills_repo_url',
   'output_language',
   'ai_provider',
   'openai_api_key',
@@ -283,12 +288,92 @@ function isVersionNewer(candidate: string, current: string): boolean {
   return false;
 }
 
+type MarketplaceSourceState = {
+  id: string;
+  label: string;
+  repoUrl: string;
+  configured: boolean;
+  enabled: boolean;
+  error?: string;
+};
+
+function resolveMarketplaceSources(settings = loadSettings()): {
+  sources: MarketplaceSourceConfig[];
+  sourceStates: MarketplaceSourceState[];
+} {
+  const sources: MarketplaceSourceConfig[] = [
+    {
+      id: OFFICIAL_MARKETPLACE_SOURCE_ID,
+      label: 'Marketplace',
+      repoUrl: 'https://github.com/nahisaho/coreclaw-marketplace',
+      skillsPath: 'coreclaw-skills-hub/skills',
+    },
+  ];
+  const sourceStates: MarketplaceSourceState[] = [
+    {
+      id: OFFICIAL_MARKETPLACE_SOURCE_ID,
+      label: 'Marketplace',
+      repoUrl: 'https://github.com/nahisaho/coreclaw-marketplace',
+      configured: true,
+      enabled: true,
+    },
+  ];
+
+  const mySkillsRepoUrl = String(settings.my_skills_repo_url || '').trim();
+  if (!mySkillsRepoUrl) {
+    sourceStates.push({
+      id: 'my-skills',
+      label: 'My SKILLS',
+      repoUrl: '',
+      configured: false,
+      enabled: false,
+    });
+    return { sources, sourceStates };
+  }
+
+  try {
+    const customSource = getCustomMarketplaceSource(mySkillsRepoUrl);
+    sources.push(customSource);
+    sourceStates.push({
+      id: customSource.id,
+      label: customSource.label,
+      repoUrl: customSource.repoUrl,
+      configured: true,
+      enabled: true,
+    });
+  } catch (err) {
+    sourceStates.push({
+      id: 'my-skills',
+      label: 'My SKILLS',
+      repoUrl: mySkillsRepoUrl,
+      configured: true,
+      enabled: false,
+      error: err instanceof Error ? err.message : 'Invalid GitHub repository URL',
+    });
+  }
+
+  return { sources, sourceStates };
+}
+
+async function listAllMarketplaceSkillGroups(settings = loadSettings()): Promise<MarketplaceSkillGroup[]> {
+  const { sources } = resolveMarketplaceSources(settings);
+  const groups = await Promise.all(sources.map((source) => listMarketplaceSkillGroups(source)));
+  return groups.flat().sort((left, right) => {
+    if (left.sourceLabel !== right.sourceLabel) {
+      return left.sourceLabel.localeCompare(right.sourceLabel);
+    }
+    return left.slug.localeCompare(right.slug);
+  });
+}
+
 async function getMarketplaceSkillStatus(
   skillName: string,
-  marketplaceGroups?: Awaited<ReturnType<typeof listMarketplaceSkillGroups>>,
+  marketplaceGroups?: Awaited<ReturnType<typeof listAllMarketplaceSkillGroups>>,
 ): Promise<{
   marketplaceImported: boolean;
   marketplaceSlug: string;
+  marketplaceSourceId: string;
+  marketplaceSourceLabel: string;
   currentVersion: string;
   latestVersion: string;
   updateAvailable: boolean;
@@ -297,6 +382,8 @@ async function getMarketplaceSkillStatus(
   const localMeta = getSkillMetadata(skillName);
   const importMeta = getMarketplaceImportMetadata(skillName);
   let marketplaceImported = isMarketplaceImportedSkill(skillName);
+  let marketplaceSourceId = importMeta?.sourceId || OFFICIAL_MARKETPLACE_SOURCE_ID;
+  let marketplaceSourceLabel = importMeta?.sourceLabel || 'Marketplace';
   const currentVersion = marketplaceImported
     ? (importMeta?.version || localMeta?.version || '')
     : (localMeta?.version || importMeta?.version || '');
@@ -304,12 +391,16 @@ async function getMarketplaceSkillStatus(
   let marketplaceSlug = importMeta?.slug || skillName;
 
   try {
-    const groups = marketplaceGroups ?? await listMarketplaceSkillGroups();
-    const marketplaceGroup = groups.find((group) => group.slug === marketplaceSlug);
+    const groups = marketplaceGroups ?? await listAllMarketplaceSkillGroups();
+    const marketplaceGroup = groups.find(
+      (group) => group.slug === marketplaceSlug && group.sourceId === marketplaceSourceId,
+    );
     if (marketplaceGroup) {
       latestVersion = marketplaceGroup.version || '';
       marketplaceImported = marketplaceImported || fs.existsSync(path.join(skillDir, 'group.json'));
       marketplaceSlug = marketplaceGroup.slug;
+      marketplaceSourceId = marketplaceGroup.sourceId;
+      marketplaceSourceLabel = marketplaceGroup.sourceLabel;
     }
   } catch (err) {
     logger.warn({ skill: skillName, err }, 'Failed to resolve marketplace status for local skill');
@@ -318,6 +409,8 @@ async function getMarketplaceSkillStatus(
   return {
     marketplaceImported,
     marketplaceSlug,
+    marketplaceSourceId,
+    marketplaceSourceLabel,
     currentVersion: currentVersion || (marketplaceImported ? latestVersion : ''),
     latestVersion,
     updateAvailable: Boolean(currentVersion && latestVersion && isVersionNewer(latestVersion, currentVersion)),
@@ -1465,9 +1558,9 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 
   // GET /api/skills
   if (method === 'GET' && pathname === '/api/skills') {
-    let marketplaceGroups: Awaited<ReturnType<typeof listMarketplaceSkillGroups>> = [];
+    let marketplaceGroups: Awaited<ReturnType<typeof listAllMarketplaceSkillGroups>> = [];
     try {
-      marketplaceGroups = await listMarketplaceSkillGroups();
+      marketplaceGroups = await listAllMarketplaceSkillGroups();
     } catch (err) {
       logger.warn({ err }, 'Failed to preload marketplace groups for local skills');
     }
@@ -1498,6 +1591,8 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
         fileCount,
         marketplaceImported: marketplaceStatus.marketplaceImported,
         marketplaceSlug: marketplaceStatus.marketplaceSlug,
+        marketplaceSourceId: marketplaceStatus.marketplaceSourceId,
+        marketplaceSourceLabel: marketplaceStatus.marketplaceSourceLabel,
         latestVersion: marketplaceStatus.latestVersion,
         updateAvailable: marketplaceStatus.updateAvailable,
       };
@@ -1531,10 +1626,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
   // GET /api/skills/marketplace
   if (method === 'GET' && pathname === '/api/skills/marketplace') {
     try {
-      const groups = await listMarketplaceSkillGroups();
+      const settings = loadSettings();
+      const { sourceStates } = resolveMarketplaceSources(settings);
+      const groups = await listAllMarketplaceSkillGroups(settings);
       const groupsWithStatus = groups.map((group) => {
         const importMeta = getMarketplaceImportMetadata(group.slug);
-        const currentVersion = importMeta?.version || '';
+        const currentVersion = importMeta?.sourceId === group.sourceId ? importMeta.version || '' : '';
         return {
           ...group,
           updateAvailable: Boolean(
@@ -1545,7 +1642,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
           ),
         };
       });
-      sendJson(res, 200, groupsWithStatus);
+      sendJson(res, 200, { groups: groupsWithStatus, sources: sourceStates });
     } catch (err) {
       logger.error({ err }, 'Failed to list marketplace skills');
       sendJson(res, 502, { error: 'Failed to load marketplace skills' });
@@ -1558,11 +1655,18 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
     try {
       const body = JSON.parse(await readBody(req));
       const group = String(body.group || '').trim();
+      const sourceId = String(body.sourceId || OFFICIAL_MARKETPLACE_SOURCE_ID).trim() || OFFICIAL_MARKETPLACE_SOURCE_ID;
       if (!group) {
         sendJson(res, 400, { error: 'Marketplace group is required' });
         return;
       }
-      const result = importMarketplaceSkillGroup(group);
+      const { sources } = resolveMarketplaceSources();
+      const source = sources.find((item) => item.id === sourceId);
+      if (!source) {
+        sendJson(res, 400, { error: 'Marketplace source is not configured' });
+        return;
+      }
+      const result = importMarketplaceSkillGroup(group, source);
       sendJson(res, 200, { ...result, imported: true });
     } catch (err) {
       logger.error({ err }, 'Failed to import marketplace skill');

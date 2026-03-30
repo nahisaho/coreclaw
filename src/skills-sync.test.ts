@@ -5,6 +5,7 @@ import path from 'path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 
 import {
+  getCustomMarketplaceSource,
   getMarketplaceImportMetadata,
   getSkillMetadata,
   importMarketplaceSkillGroupFromDir,
@@ -79,6 +80,9 @@ describe('skills-sync marketplace helpers', () => {
         version: 'v0.4.0',
         count: 42,
         installed: false,
+        sourceId: 'official',
+        sourceLabel: 'Marketplace',
+        repoUrl: 'https://github.com/nahisaho/coreclaw-marketplace',
       },
       {
         slug: 'scientist',
@@ -88,6 +92,52 @@ describe('skills-sync marketplace helpers', () => {
         version: 'v1.2.3',
         count: 196,
         installed: true,
+        sourceId: 'official',
+        sourceLabel: 'Marketplace',
+        repoUrl: 'https://github.com/nahisaho/coreclaw-marketplace',
+      },
+    ]);
+  });
+
+  it('lists skill groups from a custom My SKILLS repository source', async () => {
+    const fetchMock = (async (input) => {
+      const url = String(input);
+      if (url.endsWith('/skills')) {
+        return new Response(JSON.stringify([
+          { name: 'designer-pack', type: 'dir' },
+        ]), { status: 200 });
+      }
+      if (url.endsWith('/skills/designer-pack/group.json')) {
+        return new Response(JSON.stringify({
+          name: 'Designer Pack',
+          description: 'Custom design helpers',
+          icon: '🎨',
+          count: 5,
+        }), { status: 200 });
+      }
+      if (url.endsWith('/skills/designer-pack/skill.json')) {
+        return new Response(JSON.stringify({ version: 'v2.0.0' }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }) as typeof fetch;
+
+    const groups = await listMarketplaceSkillGroups(
+      getCustomMarketplaceSource('https://github.com/example/my-skills'),
+      fetchMock,
+    );
+
+    expect(groups).toEqual([
+      {
+        slug: 'designer-pack',
+        name: 'Designer Pack',
+        description: 'Custom design helpers',
+        icon: '🎨',
+        version: 'v2.0.0',
+        count: 5,
+        installed: false,
+        sourceId: 'my-skills',
+        sourceLabel: 'My SKILLS',
+        repoUrl: 'https://github.com/example/my-skills',
       },
     ]);
   });
@@ -118,6 +168,9 @@ describe('skills-sync marketplace helpers', () => {
       slug: 'scientist',
       version: 'v0.2.0',
       importedAt: expect.any(String),
+      sourceId: 'official',
+      sourceLabel: 'Marketplace',
+      repoUrl: 'https://github.com/nahisaho/coreclaw-marketplace',
     });
     expect(isMarketplaceImportedSkill('scientist')).toBe(true);
     expect(getSkillMetadata('scientist')).toEqual({
@@ -134,5 +187,29 @@ describe('skills-sync marketplace helpers', () => {
     expect(updated.updated).toBe(true);
     expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'skills', 'scientific-demo', 'README.md'))).toBe(true);
     expect(fs.existsSync(path.join(tempDir, 'skills', 'scientist', 'prompts', 'local.md'))).toBe(true);
+  });
+
+  it('stores My SKILLS source metadata when importing a custom pack', () => {
+    const sourceDir = path.join(tempDir, 'marketplace', 'designer-pack');
+    fs.mkdirSync(path.join(sourceDir, 'skills', 'designer-demo'), { recursive: true });
+    fs.writeFileSync(path.join(sourceDir, 'group.json'), '{"name":"Designer Pack","description":"Custom design helpers"}');
+    fs.writeFileSync(path.join(sourceDir, 'skill.json'), '{"entrypoint":"main.py","version":"v3.1.0"}');
+    fs.writeFileSync(path.join(sourceDir, 'skills', 'designer-demo', 'SKILL.md'), '# Subskill');
+
+    importMarketplaceSkillGroupFromDir(
+      sourceDir,
+      'designer-pack',
+      path.join(tempDir, 'skills'),
+      getCustomMarketplaceSource('https://github.com/example/custom-repo'),
+    );
+
+    expect(getMarketplaceImportMetadata('designer-pack')).toEqual({
+      slug: 'designer-pack',
+      version: 'v3.1.0',
+      importedAt: expect.any(String),
+      sourceId: 'my-skills',
+      sourceLabel: 'My SKILLS',
+      repoUrl: 'https://github.com/example/custom-repo',
+    });
   });
 });

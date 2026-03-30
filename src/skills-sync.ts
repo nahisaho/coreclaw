@@ -10,11 +10,18 @@ import { spawnSync } from 'child_process';
 
 import { logger } from './logger.js';
 
-const MARKETPLACE_REPO_URL = 'https://github.com/nahisaho/coreclaw-marketplace.git';
-const MARKETPLACE_API_BASE = 'https://api.github.com/repos/nahisaho/coreclaw-marketplace/contents';
-const MARKETPLACE_RAW_BASE = 'https://raw.githubusercontent.com/nahisaho/coreclaw-marketplace/main';
-const MARKETPLACE_SKILLS_PATH = 'coreclaw-skills-hub/skills';
+const OFFICIAL_MARKETPLACE_REPO_URL = 'https://github.com/nahisaho/coreclaw-marketplace';
+const OFFICIAL_MARKETPLACE_SKILLS_PATH = 'coreclaw-skills-hub/skills';
 const MARKETPLACE_IMPORT_METADATA_FILE = '.coreclaw-marketplace.json';
+export const OFFICIAL_MARKETPLACE_SOURCE_ID = 'official';
+export const MY_SKILLS_SOURCE_ID = 'my-skills';
+
+export interface MarketplaceSourceConfig {
+  id: string;
+  label: string;
+  repoUrl: string;
+  skillsPath: string;
+}
 
 export interface MarketplaceSkillGroup {
   slug: string;
@@ -24,6 +31,9 @@ export interface MarketplaceSkillGroup {
   version: string;
   count: number;
   installed: boolean;
+  sourceId: string;
+  sourceLabel: string;
+  repoUrl: string;
 }
 
 interface MarketplaceDirEntry {
@@ -46,6 +56,69 @@ export interface MarketplaceImportMetadata {
   slug: string;
   version: string;
   importedAt: string;
+  sourceId: string;
+  sourceLabel: string;
+  repoUrl: string;
+}
+
+function getOfficialMarketplaceSource(): MarketplaceSourceConfig {
+  return {
+    id: OFFICIAL_MARKETPLACE_SOURCE_ID,
+    label: 'Marketplace',
+    repoUrl: OFFICIAL_MARKETPLACE_REPO_URL,
+    skillsPath: OFFICIAL_MARKETPLACE_SKILLS_PATH,
+  };
+}
+
+function normalizeGithubRepoUrl(repoUrl: string): string {
+  const trimmed = String(repoUrl || '').trim();
+  if (!trimmed) {
+    throw new Error('GitHub repository URL is required');
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(trimmed);
+  } catch {
+    throw new Error('Invalid GitHub repository URL');
+  }
+
+  const host = parsed.hostname.toLowerCase();
+  if (host !== 'github.com' && host !== 'www.github.com') {
+    throw new Error('GitHub repository URL must use github.com');
+  }
+
+  const parts = parsed.pathname.replace(/\/+$/, '').split('/').filter(Boolean);
+  if (parts.length < 2) {
+    throw new Error('GitHub repository URL must include owner and repository name');
+  }
+
+  const owner = parts[0];
+  const repo = parts[1].replace(/\.git$/i, '');
+  if (!owner || !repo) {
+    throw new Error('GitHub repository URL must include owner and repository name');
+  }
+
+  return `https://github.com/${owner}/${repo}`;
+}
+
+function getGithubContentsApiBase(repoUrl: string): string {
+  const normalizedUrl = normalizeGithubRepoUrl(repoUrl);
+  const [, , , owner, repo] = normalizedUrl.split('/');
+  return `https://api.github.com/repos/${owner}/${repo}/contents`;
+}
+
+function getGithubCloneUrl(repoUrl: string): string {
+  return `${normalizeGithubRepoUrl(repoUrl)}.git`;
+}
+
+export function getCustomMarketplaceSource(repoUrl: string): MarketplaceSourceConfig {
+  return {
+    id: MY_SKILLS_SOURCE_ID,
+    label: 'My SKILLS',
+    repoUrl: normalizeGithubRepoUrl(repoUrl),
+    skillsPath: 'skills',
+  };
 }
 
 /**
@@ -194,9 +267,34 @@ async function fetchMarketplaceJson<T>(url: string, fetchImpl: typeof fetch): Pr
   return res.json() as Promise<T>;
 }
 
-export async function listMarketplaceSkillGroups(fetchImpl: typeof fetch = fetch): Promise<MarketplaceSkillGroup[]> {
+async function fetchMarketplaceFileJson<T>(url: string, fetchImpl: typeof fetch): Promise<T> {
+  const res = await fetchImpl(url, {
+    headers: {
+      Accept: 'application/vnd.github+json',
+      'User-Agent': 'CoreClaw',
+    },
+  });
+  if (!res.ok) {
+    throw new Error(`Marketplace request failed: ${res.status}`);
+  }
+
+  const payload = await res.json() as { content?: string; encoding?: string };
+  if (typeof payload.content !== 'string') {
+    return payload as T;
+  }
+
+  const decoded = payload.encoding === 'base64'
+    ? Buffer.from(payload.content, 'base64').toString('utf-8')
+    : payload.content;
+  return JSON.parse(decoded) as T;
+}
+
+async function listMarketplaceSkillGroupsFromSource(
+  source: MarketplaceSourceConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<MarketplaceSkillGroup[]> {
   const rootEntries = await fetchMarketplaceJson<MarketplaceDirEntry[]>(
-    `${MARKETPLACE_API_BASE}/${MARKETPLACE_SKILLS_PATH}`,
+    `${getGithubContentsApiBase(source.repoUrl)}/${source.skillsPath}`,
     fetchImpl,
   );
   const skillGroups = rootEntries.filter((entry) => entry.type === 'dir');
@@ -206,21 +304,21 @@ export async function listMarketplaceSkillGroups(fetchImpl: typeof fetch = fetch
     let meta: MarketplaceGroupMetadata = {};
     let skillMeta: MarketplaceSkillMetadata = {};
     try {
-      meta = await fetchMarketplaceJson<MarketplaceGroupMetadata>(
-        `${MARKETPLACE_RAW_BASE}/${MARKETPLACE_SKILLS_PATH}/${entry.name}/group.json`,
+      meta = await fetchMarketplaceFileJson<MarketplaceGroupMetadata>(
+        `${getGithubContentsApiBase(source.repoUrl)}/${source.skillsPath}/${entry.name}/group.json`,
         fetchImpl,
       );
     } catch (err) {
-      logger.warn({ group: entry.name, err }, 'Failed to read marketplace group.json');
+      logger.warn({ group: entry.name, source: source.id, err }, 'Failed to read marketplace group.json');
     }
 
     try {
-      skillMeta = await fetchMarketplaceJson<MarketplaceSkillMetadata>(
-        `${MARKETPLACE_RAW_BASE}/${MARKETPLACE_SKILLS_PATH}/${entry.name}/skill.json`,
+      skillMeta = await fetchMarketplaceFileJson<MarketplaceSkillMetadata>(
+        `${getGithubContentsApiBase(source.repoUrl)}/${source.skillsPath}/${entry.name}/skill.json`,
         fetchImpl,
       );
     } catch (err) {
-      logger.warn({ group: entry.name, err }, 'Failed to read marketplace skill.json');
+      logger.warn({ group: entry.name, source: source.id, err }, 'Failed to read marketplace skill.json');
     }
 
     return {
@@ -231,16 +329,31 @@ export async function listMarketplaceSkillGroups(fetchImpl: typeof fetch = fetch
       version: skillMeta.version?.trim() || '',
       count: Number.isFinite(meta.count) ? Number(meta.count) : 0,
       installed: isInstallableSkillPackage(path.join(skillsRoot, entry.name)),
+      sourceId: source.id,
+      sourceLabel: source.label,
+      repoUrl: source.repoUrl,
     } satisfies MarketplaceSkillGroup;
   }));
 
   return groups.sort((left, right) => left.slug.localeCompare(right.slug));
 }
 
+export async function listMarketplaceSkillGroups(
+  sourceOrFetch: MarketplaceSourceConfig | typeof fetch = getOfficialMarketplaceSource(),
+  fetchImpl: typeof fetch = fetch,
+): Promise<MarketplaceSkillGroup[]> {
+  if (typeof sourceOrFetch === 'function') {
+    return listMarketplaceSkillGroupsFromSource(getOfficialMarketplaceSource(), sourceOrFetch);
+  }
+
+  return listMarketplaceSkillGroupsFromSource(sourceOrFetch, fetchImpl);
+}
+
 export function importMarketplaceSkillGroupFromDir(
   sourceDir: string,
   groupName: string,
   skillsRoot = getSkillsRoot(),
+  source = getOfficialMarketplaceSource(),
 ): { name: string; updated: boolean; fileCount: number } {
   const safeGroupName = sanitizeSkillName(groupName);
   if (!safeGroupName) {
@@ -260,6 +373,9 @@ export function importMarketplaceSkillGroupFromDir(
     slug: safeGroupName,
     version: marketplaceVersion,
     importedAt: new Date().toISOString(),
+    sourceId: source.id,
+    sourceLabel: source.label,
+    repoUrl: source.repoUrl,
   };
   fs.writeFileSync(
     getMarketplaceImportMetadataPath(destinationDir),
@@ -273,7 +389,10 @@ export function importMarketplaceSkillGroupFromDir(
   };
 }
 
-export function importMarketplaceSkillGroup(groupName: string): { name: string; updated: boolean; fileCount: number } {
+export function importMarketplaceSkillGroup(
+  groupName: string,
+  source = getOfficialMarketplaceSource(),
+): { name: string; updated: boolean; fileCount: number } {
   const safeGroupName = sanitizeSkillName(groupName);
   if (!safeGroupName) {
     throw new Error('Invalid marketplace skill name');
@@ -283,7 +402,7 @@ export function importMarketplaceSkillGroup(groupName: string): { name: string; 
   const repoDir = path.join(tempDir, 'repo');
 
   try {
-    const clone = spawnSync('git', ['clone', '--depth', '1', MARKETPLACE_REPO_URL, repoDir], {
+    const clone = spawnSync('git', ['clone', '--depth', '1', getGithubCloneUrl(source.repoUrl), repoDir], {
       encoding: 'utf-8',
       timeout: 120000,
     });
@@ -291,12 +410,12 @@ export function importMarketplaceSkillGroup(groupName: string): { name: string; 
       throw new Error((clone.stderr || clone.stdout || 'Failed to clone marketplace repository').trim());
     }
 
-    const sourceDir = path.join(repoDir, MARKETPLACE_SKILLS_PATH, safeGroupName);
+    const sourceDir = path.join(repoDir, source.skillsPath, safeGroupName);
     if (!fs.existsSync(sourceDir)) {
       throw new Error('Marketplace skill package not found');
     }
 
-    return importMarketplaceSkillGroupFromDir(sourceDir, safeGroupName);
+    return importMarketplaceSkillGroupFromDir(sourceDir, safeGroupName, getSkillsRoot(), source);
   } finally {
     fs.rmSync(tempDir, { recursive: true, force: true });
   }
@@ -428,6 +547,7 @@ export function getMarketplaceImportMetadata(
   skillName: string,
   skillsRoot = getSkillsRoot(),
 ): MarketplaceImportMetadata | null {
+  const officialSource = getOfficialMarketplaceSource();
   const metadataPath = getMarketplaceImportMetadataPath(path.join(skillsRoot, skillName));
   if (!fs.existsSync(metadataPath)) return null;
 
@@ -438,6 +558,15 @@ export function getMarketplaceImportMetadata(
       slug: parsed.slug.trim(),
       version: typeof parsed.version === 'string' ? parsed.version.trim() : '',
       importedAt: typeof parsed.importedAt === 'string' ? parsed.importedAt : '',
+      sourceId: typeof parsed.sourceId === 'string' && parsed.sourceId.trim()
+        ? parsed.sourceId.trim()
+        : officialSource.id,
+      sourceLabel: typeof parsed.sourceLabel === 'string' && parsed.sourceLabel.trim()
+        ? parsed.sourceLabel.trim()
+        : officialSource.label,
+      repoUrl: typeof parsed.repoUrl === 'string' && parsed.repoUrl.trim()
+        ? normalizeGithubRepoUrl(parsed.repoUrl)
+        : officialSource.repoUrl,
     };
   } catch {
     return null;

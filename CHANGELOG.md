@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.68] - 2026-03-31
+
+### Changed
+
+- **My SKILLS repository import**: Settings > SkillsでMy SKILLSのGitHub repository URLを設定し、repository配下の`skills/`ディレクトリからもskill packを一覧表示・import・updateできるようにしました。
+
 ## [0.1.67] - 2026-03-30
 
 ### Changed

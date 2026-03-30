@@ -456,6 +456,9 @@ test.describe('Settings', () => {
 
     await page.selectOption('#settingsOutputLanguage', 'en');
 
+    await page.click('#settingsTabButtonSkills');
+    await page.fill('#settingsMySkillsRepoUrl', 'https://github.com/example/my-skills');
+
     // Switch to GitHub tab
     await page.click('#settingsTabButtonGithub');
     await page.fill('#settingsGithubUser', 'test-user');
@@ -467,6 +470,9 @@ test.describe('Settings', () => {
     // Reopen settings — values should persist
     await page.click('.settings-btn');
     await expect(page.locator('#settingsOutputLanguage')).toHaveValue('en');
+    await page.click('#settingsTabButtonSkills');
+    await expect(page.locator('#settingsMySkillsRepoUrl')).toHaveValue('https://github.com/example/my-skills');
+    await page.click('#settingsTabButtonGithub');
     await expect(page.locator('#settingsGithubUser')).toHaveValue('test-user');
   });
 
@@ -622,17 +628,38 @@ test.describe('Settings', () => {
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify([
-          {
-            slug: 'scientist',
-            name: 'Scientist',
-            description: 'Research pack',
-            icon: '🔬',
-            version: 'v1.2.3',
-            count: 196,
-            installed: false,
-          },
-        ]),
+        body: JSON.stringify({
+          groups: [
+            {
+              slug: 'scientist',
+              name: 'Scientist',
+              description: 'Research pack',
+              icon: '🔬',
+              version: 'v1.2.3',
+              count: 196,
+              installed: false,
+              sourceId: 'official',
+              sourceLabel: 'Marketplace',
+              repoUrl: 'https://github.com/nahisaho/coreclaw-marketplace',
+            },
+          ],
+          sources: [
+            {
+              id: 'official',
+              label: 'Marketplace',
+              repoUrl: 'https://github.com/nahisaho/coreclaw-marketplace',
+              configured: true,
+              enabled: true,
+            },
+            {
+              id: 'my-skills',
+              label: 'My SKILLS',
+              repoUrl: '',
+              configured: false,
+              enabled: false,
+            },
+          ],
+        }),
       });
     });
 
@@ -646,7 +673,101 @@ test.describe('Settings', () => {
     await expect(marketplace).toContainText('Research pack');
     await expect(marketplace).toContainText('Version v1.2.3');
     await expect(marketplace).toContainText('196 skills');
+    await expect(page.locator('#marketplaceSourceStatus')).toContainText('My SKILLS');
     await expect(marketplace.locator('button:has-text("Import")')).toBeVisible();
+  });
+
+  test('imports a My SKILLS pack using the configured source', async ({ page }) => {
+    let importRequestBody = null;
+
+    await page.route('**/api/skills', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([]),
+        });
+        return;
+      }
+      await route.fallback();
+    });
+
+    await page.route('**/api/skills/marketplace', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({
+          groups: [
+            {
+              slug: 'scientist',
+              name: 'Scientist',
+              description: 'Research pack',
+              icon: '🔬',
+              version: 'v1.2.3',
+              count: 196,
+              installed: false,
+              sourceId: 'official',
+              sourceLabel: 'Marketplace',
+              repoUrl: 'https://github.com/nahisaho/coreclaw-marketplace',
+            },
+            {
+              slug: 'private-pack',
+              name: 'Private Pack',
+              description: 'Custom pack from My SKILLS',
+              icon: '🧪',
+              version: 'v0.3.0',
+              count: 3,
+              installed: false,
+              sourceId: 'my-skills',
+              sourceLabel: 'My SKILLS',
+              repoUrl: 'https://github.com/example/my-skills',
+            },
+          ],
+          sources: [
+            {
+              id: 'official',
+              label: 'Marketplace',
+              repoUrl: 'https://github.com/nahisaho/coreclaw-marketplace',
+              configured: true,
+              enabled: true,
+            },
+            {
+              id: 'my-skills',
+              label: 'My SKILLS',
+              repoUrl: 'https://github.com/example/my-skills',
+              configured: true,
+              enabled: true,
+            },
+          ],
+        }),
+      });
+    });
+
+    await page.route('**/api/skills/marketplace/import', async (route) => {
+      importRequestBody = route.request().postDataJSON();
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ imported: true, updated: false, name: 'private-pack', fileCount: 7 }),
+      });
+    });
+
+    page.once('dialog', async (dialog) => {
+      expect(dialog.type()).toBe('alert');
+      await dialog.accept();
+    });
+
+    await page.goto('/');
+    await page.click('.settings-btn');
+    await page.click('#settingsTabButtonSkills');
+
+    const mySkillsSection = page.locator('.marketplace-source-group[data-source-id="my-skills"]');
+    await expect(mySkillsSection).toContainText('Private Pack');
+    await expect(page.locator('#marketplaceSourceStatus')).toContainText('https://github.com/example/my-skills');
+
+    await mySkillsSection.getByRole('button', { name: 'Import', exact: true }).click();
+
+    expect(importRequestBody).toEqual({ group: 'private-pack', sourceId: 'my-skills' });
   });
 
   test('shows marketplace description popup from info button', async ({ page }) => {
@@ -724,7 +845,7 @@ test.describe('Settings', () => {
     await page.fill('#marketplaceSearchInput', 'no-match');
 
     await expect(marketplace.locator('.skill-card')).toHaveCount(0);
-    await expect(page.locator('#marketplaceSkillEmpty')).toContainText('No marketplace skills match "no-match".');
+    await expect(page.locator('#marketplaceSkillEmpty')).toContainText('No skill packs match "no-match".');
   });
 
   test('reopens Skills tab with fresh marketplace data', async ({ page }) => {
@@ -2175,6 +2296,7 @@ test.describe('REST API', () => {
     const res = await request.put('/api/settings', {
       data: {
         github_token: 'ghp_testtoken123456',
+        my_skills_repo_url: 'https://github.com/example/my-skills',
         output_language: 'en',
         ai_provider: 'ollama',
         ollama_url: 'http://localhost:11434',
@@ -2189,6 +2311,7 @@ test.describe('REST API', () => {
     expect(settings.ai_provider).toBe('ollama');
     expect(settings.ollama_url).toBe('http://localhost:11434');
     expect(settings.ollama_model).toBe('llama3.3');
+    expect(settings.my_skills_repo_url).toBe('https://github.com/example/my-skills');
     // Token should be masked
     expect(settings.github_token).toContain('•');
     expect(settings.github_token).toMatch(/3456$/);
@@ -2197,6 +2320,7 @@ test.describe('REST API', () => {
     await request.put('/api/settings', {
       data: {
         github_token: '',
+        my_skills_repo_url: origSettings.my_skills_repo_url || '',
         output_language: origSettings.output_language || 'ja',
         ai_provider: origSettings.ai_provider || '',
         ollama_url: origSettings.ollama_url || '',
