@@ -163,6 +163,52 @@ describe('skills-sync marketplace helpers', () => {
     ]);
   });
 
+  it('falls back to repository root when a My SKILLS repository has no /skills directory', async () => {
+    const fetchMock = (async (input) => {
+      const url = String(input);
+      if (url.endsWith('/contents/skills')) {
+        return new Response(JSON.stringify({ message: 'Not Found' }), { status: 404 });
+      }
+      if (url.endsWith('/contents')) {
+        return new Response(JSON.stringify([
+          { name: 'microsoft-japan', type: 'dir' },
+        ]), { status: 200 });
+      }
+      if (url.endsWith('/contents/microsoft-japan/group.json')) {
+        return new Response(JSON.stringify({
+          name: 'Microsoft Japan',
+          description: 'Root-level custom pack',
+          icon: '🇯🇵',
+          count: 12,
+        }), { status: 200 });
+      }
+      if (url.endsWith('/contents/microsoft-japan/skill.json')) {
+        return new Response(JSON.stringify({ version: 'v1.0.0' }), { status: 200 });
+      }
+      throw new Error(`Unexpected URL: ${url}`);
+    }) as typeof fetch;
+
+    const groups = await listMarketplaceSkillGroups(
+      getCustomMarketplaceSource('https://github.com/nahisaho/my-copilot-agent-skills'),
+      fetchMock,
+    );
+
+    expect(groups).toEqual([
+      {
+        slug: 'microsoft-japan',
+        name: 'Microsoft Japan',
+        description: 'Root-level custom pack',
+        icon: '🇯🇵',
+        version: 'v1.0.0',
+        count: 12,
+        installed: false,
+        sourceId: 'my-skills',
+        sourceLabel: 'My SKILLS',
+        repoUrl: 'https://github.com/nahisaho/my-copilot-agent-skills',
+      },
+    ]);
+  });
+
   it('imports a marketplace skill package from a source directory', () => {
     const sourceDir = path.join(tempDir, 'marketplace', 'scientist');
     fs.mkdirSync(path.join(sourceDir, 'skills', 'scientific-demo'), { recursive: true });
@@ -231,6 +277,33 @@ describe('skills-sync marketplace helpers', () => {
       sourceId: 'my-skills',
       sourceLabel: 'My SKILLS',
       repoUrl: 'https://github.com/example/custom-repo',
+    });
+  });
+
+  it('imports a root-level My SKILLS package when the repository has no /skills directory', () => {
+    const repoDir = path.join(tempDir, 'marketplace-root');
+    const sourceDir = path.join(repoDir, 'microsoft-japan');
+    fs.mkdirSync(path.join(sourceDir, 'skills', 'copilot-demo'), { recursive: true });
+    fs.writeFileSync(path.join(sourceDir, 'group.json'), '{"name":"Microsoft Japan","description":"Root-level pack"}');
+    fs.writeFileSync(path.join(sourceDir, 'skill.json'), '{"version":"v1.1.0"}');
+    fs.writeFileSync(path.join(sourceDir, 'skills', 'copilot-demo', 'SKILL.md'), '# demo');
+
+    const imported = importMarketplaceSkillGroupFromDir(
+      sourceDir,
+      'microsoft-japan',
+      path.join(tempDir, 'skills'),
+      getCustomMarketplaceSource('https://github.com/nahisaho/my-copilot-agent-skills'),
+    );
+
+    expect(imported.updated).toBe(false);
+    expect(listAvailableSkills()).toEqual(['microsoft-japan']);
+    expect(getMarketplaceImportMetadata('microsoft-japan')).toEqual({
+      slug: 'microsoft-japan',
+      version: 'v1.1.0',
+      importedAt: expect.any(String),
+      sourceId: 'my-skills',
+      sourceLabel: 'My SKILLS',
+      repoUrl: 'https://github.com/nahisaho/my-copilot-agent-skills',
     });
   });
 });

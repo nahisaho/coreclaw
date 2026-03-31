@@ -6,6 +6,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.69] - 2026-03-31
+
+### Changed
+
+- **Root-level My SKILLS repository fallback**: My SKILLS repositoryに`skills/`ディレクトリがない場合でも、repository直下のskill packageディレクトリを自動検出して一覧表示・importできるようにしました。
+
 ## [0.1.68] - 2026-03-31
 
 ### Changed

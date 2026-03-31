@@ -24,6 +24,11 @@ export interface MarketplaceSourceConfig {
   skillsPath: string;
 }
 
+interface ResolvedMarketplaceSource {
+  source: MarketplaceSourceConfig;
+  skillsPath: string;
+}
+
 export interface MarketplaceSkillGroup {
   slug: string;
   name: string;
@@ -310,12 +315,50 @@ async function fetchMarketplaceFileJson<T>(url: string, fetchImpl: typeof fetch)
   return JSON.parse(decoded) as T;
 }
 
+function joinGithubContentsPath(base: string, relativePath: string): string {
+  return relativePath ? `${base}/${relativePath}` : base;
+}
+
+function joinRepoPath(base: string, relativePath: string): string {
+  return relativePath ? path.join(base, relativePath) : base;
+}
+
+function isMarketplaceNotFoundError(err: unknown): boolean {
+  return err instanceof Error && /Marketplace request failed: 404/.test(err.message);
+}
+
+async function resolveMarketplaceSource(
+  source: MarketplaceSourceConfig,
+  fetchImpl: typeof fetch = fetch,
+): Promise<ResolvedMarketplaceSource> {
+  const apiBase = getGithubContentsApiBase(source.repoUrl);
+  const candidatePaths = source.id === MY_SKILLS_SOURCE_ID
+    ? Array.from(new Set([source.skillsPath, '']))
+    : [source.skillsPath];
+
+  let lastError: unknown = null;
+  for (const candidatePath of candidatePaths) {
+    try {
+      await fetchMarketplaceJson<MarketplaceDirEntry[]>(joinGithubContentsPath(apiBase, candidatePath), fetchImpl);
+      return { source, skillsPath: candidatePath };
+    } catch (err) {
+      lastError = err;
+      if (!isMarketplaceNotFoundError(err) || candidatePath === candidatePaths[candidatePaths.length - 1]) {
+        throw err;
+      }
+    }
+  }
+
+  throw lastError instanceof Error ? lastError : new Error('Marketplace source path could not be resolved');
+}
+
 async function listMarketplaceSkillGroupsFromSource(
   source: MarketplaceSourceConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<MarketplaceSkillGroup[]> {
+  const resolvedSource = await resolveMarketplaceSource(source, fetchImpl);
   const rootEntries = await fetchMarketplaceJson<MarketplaceDirEntry[]>(
-    `${getGithubContentsApiBase(source.repoUrl)}/${source.skillsPath}`,
+    joinGithubContentsPath(getGithubContentsApiBase(source.repoUrl), resolvedSource.skillsPath),
     fetchImpl,
   );
   const skillGroups = rootEntries.filter((entry) => entry.type === 'dir');
@@ -326,7 +369,10 @@ async function listMarketplaceSkillGroupsFromSource(
     let skillMeta: MarketplaceSkillMetadata = {};
     try {
       meta = await fetchMarketplaceFileJson<MarketplaceGroupMetadata>(
-        `${getGithubContentsApiBase(source.repoUrl)}/${source.skillsPath}/${entry.name}/group.json`,
+        joinGithubContentsPath(
+          getGithubContentsApiBase(source.repoUrl),
+          [resolvedSource.skillsPath, entry.name, 'group.json'].filter(Boolean).join('/'),
+        ),
         fetchImpl,
       );
     } catch (err) {
@@ -335,7 +381,10 @@ async function listMarketplaceSkillGroupsFromSource(
 
     try {
       skillMeta = await fetchMarketplaceFileJson<MarketplaceSkillMetadata>(
-        `${getGithubContentsApiBase(source.repoUrl)}/${source.skillsPath}/${entry.name}/skill.json`,
+        joinGithubContentsPath(
+          getGithubContentsApiBase(source.repoUrl),
+          [resolvedSource.skillsPath, entry.name, 'skill.json'].filter(Boolean).join('/'),
+        ),
         fetchImpl,
       );
     } catch (err) {
@@ -431,8 +480,13 @@ export function importMarketplaceSkillGroup(
       throw new Error((clone.stderr || clone.stdout || 'Failed to clone marketplace repository').trim());
     }
 
-    const sourceDir = path.join(repoDir, source.skillsPath, safeGroupName);
-    if (!fs.existsSync(sourceDir)) {
+    const candidateSourceDirs = source.id === MY_SKILLS_SOURCE_ID
+      ? [joinRepoPath(repoDir, source.skillsPath), repoDir]
+      : [joinRepoPath(repoDir, source.skillsPath)];
+    const sourceDir = candidateSourceDirs
+      .map((baseDir) => path.join(baseDir, safeGroupName))
+      .find((candidateDir) => fs.existsSync(candidateDir));
+    if (!sourceDir) {
       throw new Error('Marketplace skill package not found');
     }
 
