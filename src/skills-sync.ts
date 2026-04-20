@@ -327,6 +327,78 @@ function isMarketplaceNotFoundError(err: unknown): boolean {
   return err instanceof Error && /Marketplace request failed: 404/.test(err.message);
 }
 
+function getMarketplaceHttpStatus(err: unknown): number | null {
+  if (!(err instanceof Error)) return null;
+  const match = err.message.match(/Marketplace request failed:\s*(\d{3})/);
+  if (!match) return null;
+  const status = Number.parseInt(match[1], 10);
+  return Number.isFinite(status) ? status : null;
+}
+
+function resolveMarketplaceSourceDirFromRepo(repoDir: string, source: MarketplaceSourceConfig): string {
+  const candidateSourceDirs = source.id === MY_SKILLS_SOURCE_ID
+    ? [joinRepoPath(repoDir, source.skillsPath), repoDir]
+    : [joinRepoPath(repoDir, source.skillsPath)];
+
+  for (const candidateDir of candidateSourceDirs) {
+    if (fs.existsSync(candidateDir) && fs.statSync(candidateDir).isDirectory()) {
+      return candidateDir;
+    }
+  }
+
+  throw new Error('Marketplace source path could not be resolved');
+}
+
+function listMarketplaceSkillGroupsFromLocalSourceDir(
+  sourceDir: string,
+  source: MarketplaceSourceConfig,
+): MarketplaceSkillGroup[] {
+  const skillsRoot = getSkillsRoot();
+  const entries = fs.readdirSync(sourceDir, { withFileTypes: true });
+  const groups = entries
+    .filter((entry) => entry.isDirectory())
+    .map((entry) => {
+      const groupDir = path.join(sourceDir, entry.name);
+      const meta = readMarketplaceGroupMetadata(groupDir);
+      const skillMetaVersion = readMarketplaceSkillVersion(groupDir);
+
+      return {
+        slug: entry.name,
+        name: meta.name?.trim() || entry.name,
+        description: meta.description?.trim() || '',
+        icon: meta.icon?.trim() || '📦',
+        version: skillMetaVersion,
+        count: Number.isFinite(meta.count) ? Number(meta.count) : 0,
+        installed: isInstallableSkillPackage(path.join(skillsRoot, entry.name)),
+        sourceId: source.id,
+        sourceLabel: source.label,
+        repoUrl: source.repoUrl,
+      } satisfies MarketplaceSkillGroup;
+    });
+
+  return groups.sort((left, right) => left.slug.localeCompare(right.slug));
+}
+
+function listMarketplaceSkillGroupsViaGitClone(source: MarketplaceSourceConfig): MarketplaceSkillGroup[] {
+  const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'coreclaw-marketplace-list-'));
+  const repoDir = path.join(tempDir, 'repo');
+
+  try {
+    const clone = spawnSync('git', ['clone', '--depth', '1', buildAuthenticatedGithubCloneUrl(source.repoUrl), repoDir], {
+      encoding: 'utf-8',
+      timeout: 120000,
+    });
+    if (clone.status !== 0) {
+      throw new Error((clone.stderr || clone.stdout || 'Failed to clone marketplace repository').trim());
+    }
+
+    const sourceDir = resolveMarketplaceSourceDirFromRepo(repoDir, source);
+    return listMarketplaceSkillGroupsFromLocalSourceDir(sourceDir, source);
+  } finally {
+    fs.rmSync(tempDir, { recursive: true, force: true });
+  }
+}
+
 async function resolveMarketplaceSource(
   source: MarketplaceSourceConfig,
   fetchImpl: typeof fetch = fetch,
@@ -356,56 +428,69 @@ async function listMarketplaceSkillGroupsFromSource(
   source: MarketplaceSourceConfig,
   fetchImpl: typeof fetch = fetch,
 ): Promise<MarketplaceSkillGroup[]> {
-  const resolvedSource = await resolveMarketplaceSource(source, fetchImpl);
-  const rootEntries = await fetchMarketplaceJson<MarketplaceDirEntry[]>(
-    joinGithubContentsPath(getGithubContentsApiBase(source.repoUrl), resolvedSource.skillsPath),
-    fetchImpl,
-  );
-  const skillGroups = rootEntries.filter((entry) => entry.type === 'dir');
-  const skillsRoot = getSkillsRoot();
+  try {
+    const resolvedSource = await resolveMarketplaceSource(source, fetchImpl);
+    const rootEntries = await fetchMarketplaceJson<MarketplaceDirEntry[]>(
+      joinGithubContentsPath(getGithubContentsApiBase(source.repoUrl), resolvedSource.skillsPath),
+      fetchImpl,
+    );
+    const skillGroups = rootEntries.filter((entry) => entry.type === 'dir');
+    const skillsRoot = getSkillsRoot();
 
-  const groups = await Promise.all(skillGroups.map(async (entry) => {
-    let meta: MarketplaceGroupMetadata = {};
-    let skillMeta: MarketplaceSkillMetadata = {};
-    try {
-      meta = await fetchMarketplaceFileJson<MarketplaceGroupMetadata>(
-        joinGithubContentsPath(
-          getGithubContentsApiBase(source.repoUrl),
-          [resolvedSource.skillsPath, entry.name, 'group.json'].filter(Boolean).join('/'),
-        ),
-        fetchImpl,
+    const groups = await Promise.all(skillGroups.map(async (entry) => {
+      let meta: MarketplaceGroupMetadata = {};
+      let skillMeta: MarketplaceSkillMetadata = {};
+      try {
+        meta = await fetchMarketplaceFileJson<MarketplaceGroupMetadata>(
+          joinGithubContentsPath(
+            getGithubContentsApiBase(source.repoUrl),
+            [resolvedSource.skillsPath, entry.name, 'group.json'].filter(Boolean).join('/'),
+          ),
+          fetchImpl,
+        );
+      } catch (err) {
+        logger.warn({ group: entry.name, source: source.id, err }, 'Failed to read marketplace group.json');
+      }
+
+      try {
+        skillMeta = await fetchMarketplaceFileJson<MarketplaceSkillMetadata>(
+          joinGithubContentsPath(
+            getGithubContentsApiBase(source.repoUrl),
+            [resolvedSource.skillsPath, entry.name, 'skill.json'].filter(Boolean).join('/'),
+          ),
+          fetchImpl,
+        );
+      } catch (err) {
+        logger.warn({ group: entry.name, source: source.id, err }, 'Failed to read marketplace skill.json');
+      }
+
+      return {
+        slug: entry.name,
+        name: meta.name?.trim() || entry.name,
+        description: meta.description?.trim() || '',
+        icon: meta.icon?.trim() || '📦',
+        version: skillMeta.version?.trim() || '',
+        count: Number.isFinite(meta.count) ? Number(meta.count) : 0,
+        installed: isInstallableSkillPackage(path.join(skillsRoot, entry.name)),
+        sourceId: source.id,
+        sourceLabel: source.label,
+        repoUrl: source.repoUrl,
+      } satisfies MarketplaceSkillGroup;
+    }));
+
+    return groups.sort((left, right) => left.slug.localeCompare(right.slug));
+  } catch (err) {
+    const status = getMarketplaceHttpStatus(err);
+    if (fetchImpl === fetch && (status === 403 || status === 429)) {
+      logger.warn(
+        { source: source.id, repoUrl: source.repoUrl, status },
+        'Marketplace GitHub API unavailable; falling back to git clone listing',
       );
-    } catch (err) {
-      logger.warn({ group: entry.name, source: source.id, err }, 'Failed to read marketplace group.json');
+      return listMarketplaceSkillGroupsViaGitClone(source);
     }
 
-    try {
-      skillMeta = await fetchMarketplaceFileJson<MarketplaceSkillMetadata>(
-        joinGithubContentsPath(
-          getGithubContentsApiBase(source.repoUrl),
-          [resolvedSource.skillsPath, entry.name, 'skill.json'].filter(Boolean).join('/'),
-        ),
-        fetchImpl,
-      );
-    } catch (err) {
-      logger.warn({ group: entry.name, source: source.id, err }, 'Failed to read marketplace skill.json');
-    }
-
-    return {
-      slug: entry.name,
-      name: meta.name?.trim() || entry.name,
-      description: meta.description?.trim() || '',
-      icon: meta.icon?.trim() || '📦',
-      version: skillMeta.version?.trim() || '',
-      count: Number.isFinite(meta.count) ? Number(meta.count) : 0,
-      installed: isInstallableSkillPackage(path.join(skillsRoot, entry.name)),
-      sourceId: source.id,
-      sourceLabel: source.label,
-      repoUrl: source.repoUrl,
-    } satisfies MarketplaceSkillGroup;
-  }));
-
-  return groups.sort((left, right) => left.slug.localeCompare(right.slug));
+    throw err;
+  }
 }
 
 export async function listMarketplaceSkillGroups(

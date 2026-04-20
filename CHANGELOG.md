@@ -6,6 +6,13 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
 ---
 
+## [0.1.70] - 2026-04-20
+
+### Changed
+
+- **Marketplace API fallback to git clone**: GitHub Contents APIが`403`/`429`を返した場合、`git clone --depth 1`による一覧取得へ自動フォールバックするようにしました。APIレート制限やトークン権限不足でもMarketplaceスキルパックの表示・インポートが可能になります。
+- **Skills API early return optimization**: `GET /api/skills`でローカルスキルが0件のとき、不要なMarketplace APIプリロードをスキップして即座に空配列を返すよう最適化しました。
+
 ## [0.1.69] - 2026-03-31
 
 ### Changed

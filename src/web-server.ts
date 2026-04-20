@@ -1588,6 +1588,12 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
 
   // GET /api/skills
   if (method === 'GET' && pathname === '/api/skills') {
+    const availableSkillNames = listAvailableSkills();
+    if (availableSkillNames.length === 0) {
+      sendJson(res, 200, []);
+      return;
+    }
+
     let marketplaceGroups: Awaited<ReturnType<typeof listAllMarketplaceSkillGroups>> = [];
     try {
       marketplaceGroups = await listAllMarketplaceSkillGroups();
@@ -1595,7 +1601,7 @@ async function handleRequest(req: IncomingMessage, res: ServerResponse): Promise
       logger.warn({ err }, 'Failed to preload marketplace groups for local skills');
     }
 
-    const skills = await Promise.all(listAvailableSkills().map(async (name) => {
+    const skills = await Promise.all(availableSkillNames.map(async (name) => {
       const meta = getSkillMetadata(name);
       const marketplaceStatus = await getMarketplaceSkillStatus(name, marketplaceGroups);
       // Count files in the skill directory

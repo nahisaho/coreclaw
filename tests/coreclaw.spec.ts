@@ -944,7 +944,7 @@ test.describe('Settings', () => {
 
     const skills = page.locator('#skillList');
     await expect(skills).toContainText('Version v1.2.3');
-    await expect(skills).toContainText('Update available: v1.2.4');
+    await expect(skills).toContainText('Marketplace update available: v1.2.4');
     await expect(skills.locator('button:has-text("Check")')).toBeVisible();
     await expect(page.locator('#skillList').getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
   });
@@ -1078,7 +1078,7 @@ test.describe('Settings', () => {
     await page.locator('#skillList button:has-text("Check")').click();
 
     const skills = page.locator('#skillList');
-    await expect(skills).toContainText('Update available: v1.2.4');
+    await expect(skills).toContainText('Marketplace update available: v1.2.4');
     await expect(page.locator('#skillList').getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
   });
 
@@ -1135,7 +1135,7 @@ test.describe('Settings', () => {
 
     await page.click('#settingsRefreshMarketplaceButton');
 
-    await expect(skills).toContainText('Update available: v1.2.4');
+    await expect(skills).toContainText('Marketplace update available: v1.2.4');
     await expect(page.locator('#skillList').getByRole('button', { name: 'Update', exact: true })).toBeEnabled();
   });
 
